@@ -33,14 +33,35 @@ try {
   assert.equal((await request('jobs/10248', 'PATCH', { status: 'invalid' })).status, 400)
   console.log('PASS API seed data, validation and deletion guards')
 
+  assert.deepEqual(initial.data.hostGroups, [])
+  const groupValues = { name: '@test', cluster: 'production', hosts: ['compute-01'], queueIds: ['all.q'] }
+  const group = await request('hostGroups', 'POST', groupValues)
+  assert.equal(group.status, 201)
+  assert.equal((await request('hostGroups', 'POST', groupValues)).status, 409)
+  for (const invalid of [
+    { name: 'invalid' }, { cluster: 'missing' }, { hosts: ['compute-20'] },
+    { hosts: ['missing'] }, { queueIds: ['short.q'] }, { hosts: ['compute-01', 'compute-01'] },
+  ]) {
+    assert.equal((await request('hostGroups', 'POST', { ...groupValues, name: '@invalid', ...invalid })).status, 400)
+  }
+  assert.equal((await request('nodes/compute-01', 'DELETE')).status, 409)
+  assert.equal((await request(`hostGroups/${group.data.id}`, 'DELETE')).status, 409)
+  assert.equal((await request(`hostGroups/${group.data.id}`, 'PATCH', { ...groupValues, hosts: ['compute-02'], queueIds: [] })).status, 200)
+  const groupState = JSON.parse(await readFile(path.join(directory, 'state.json'), 'utf8'))
+  assert.deepEqual(groupState.hostGroups[0].hosts, ['compute-02'])
+  assert.equal((await request(`hostGroups/${group.data.id}`, 'DELETE')).status, 200)
+  assert.equal((await request(`hostGroups/${group.data.id}`, 'PATCH', groupValues)).status, 404)
+  assert.equal((await request(`hostGroups/${group.data.id}`, 'DELETE')).status, 404)
+  console.log('PASS host group CRUD, validation, reference guards and persistence')
+
   for (const [resource, values] of [
     ['clusters', { name: 'test-cluster', host: 'test.internal', description: 'test' }],
     ['nodes', { name: 'test-node', ip: '10.9.9.9', cluster: 'production', cores: 32, ram: 128 }],
-    ['queues', { name: 'test.q', cluster: 'production', slots: 64, type: '通用计算', priority: 0 }],
+    ['queues', { name: 'smoke-test.q', cluster: 'production', slots: 64, type: '通用计算', priority: 0 }],
     ['users', { name: 'testuser', email: 'test@example.com', role: 'user', department: 'test' }],
   ]) {
     const created = await request(resource, 'POST', values)
-    assert.equal(created.status, 201)
+    assert.equal(created.status, 201, `${resource}: ${JSON.stringify(created.data)}`)
     assert.equal((await request(resource, 'POST', values)).status, 409)
     assert.equal((await request(`${resource}/${created.data.id}`, 'DELETE')).status, 200)
   }
@@ -93,6 +114,50 @@ try {
   await page.getByRole('button', { name: '确认操作', exact: true }).click()
   await userRow.waitFor({ state: 'detached' })
   console.log('PASS user creation, disable and deletion')
+
+  await page.locator('nav').getByRole('button', { name: '队列管理', exact: true }).click()
+  await page.getByRole('tab', { name: '队列组', exact: true }).click()
+  await page.getByRole('button', { name: '创建队列组', exact: true }).click()
+  await page.getByLabel('组名', { exact: true }).fill('@browsergroup')
+  await page.getByRole('dialog').getByLabel('所属集群', { exact: true }).selectOption('production')
+  await page.getByRole('group', { name: '成员节点', exact: false }).getByLabel('compute-01', { exact: true }).check()
+  await page.getByRole('group', { name: '关联队列', exact: false }).getByLabel('all.q', { exact: true }).check()
+  await page.getByRole('button', { name: '保存队列组', exact: true }).click()
+  const groupRow = page.locator('tbody tr').filter({ hasText: '@browsergroup' })
+  await groupRow.waitFor()
+  assert.match(await groupRow.textContent(), /compute-01/)
+  assert.match(await groupRow.textContent(), /all.q/)
+  await groupRow.getByRole('button', { name: '删除队列组', exact: true }).click()
+  assert.equal(await page.getByRole('button', { name: '确认删除', exact: true }).isDisabled(), true)
+  await page.getByRole('button', { name: '取消', exact: true }).click()
+  await groupRow.getByRole('button', { name: '编辑队列组', exact: true }).click()
+  await page.getByLabel('compute-01', { exact: true }).uncheck()
+  await page.getByLabel('compute-02', { exact: true }).check()
+  await page.getByLabel('all.q', { exact: true }).uncheck()
+  await page.getByRole('button', { name: '保存队列组', exact: true }).click()
+  await groupRow.getByText('compute-02', { exact: true }).waitFor()
+  await page.getByLabel('搜索队列组', { exact: true }).fill('absent')
+  await groupRow.waitFor({ state: 'detached' })
+  await page.getByLabel('搜索队列组', { exact: true }).fill('compute-02')
+  await groupRow.waitFor()
+  await page.getByLabel('选择集群', { exact: true }).selectOption('research')
+  await groupRow.waitFor({ state: 'detached' })
+  await page.getByLabel('选择集群', { exact: true }).selectOption('all')
+  await groupRow.waitFor()
+  await page.screenshot({ path: '/tmp/gridengine-groups-desktop.png', fullPage: true })
+  for (const width of [1440, 768, 390, 360]) {
+    await page.setViewportSize({ width, height: 844 })
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false, `Group page overflow at ${width}px`)
+  }
+  await groupRow.getByRole('button', { name: '编辑队列组', exact: true }).click()
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+  await page.screenshot({ path: '/tmp/gridengine-groups-mobile.png', fullPage: true })
+  await page.getByRole('button', { name: '取消', exact: true }).click()
+  await groupRow.getByRole('button', { name: '删除队列组', exact: true }).click()
+  await page.getByRole('button', { name: '确认删除', exact: true }).click()
+  await groupRow.waitFor({ state: 'detached' })
+  await page.setViewportSize({ width: 1440, height: 1100 })
+  console.log('PASS host group creation, editing, search, cluster filtering, deletion and responsive layout')
 
   await page.locator('nav').getByRole('button', { name: '集群概览', exact: true }).click()
   await page.getByLabel('选择集群', { exact: true }).selectOption('research')

@@ -11,7 +11,7 @@ pnpm install
 pnpm dev
 ```
 
-开发模式同时启动 API 和前端。Vite 默认使用 5173，端口占用时自动选择下一个可用端口，以终端输出为准。API 默认使用 3101；通过 `API_PORT` 修改 API 端口时，还需同步调整 `vite.config.js` 中的代理目标。
+开发模式同时启动 API 和前端。Vite 默认使用 5173，端口占用时自动选择下一个可用端口，以终端输出为准。API 默认使用 3101；设置 `API_PORT` 后，开发代理自动使用相同端口。
 
 ```sh
 pnpm build
@@ -28,11 +28,14 @@ pnpm start
 - 节点管理：添加节点、CPU/内存配置、资源使用率、详情、上下线与删除。
 - 集群管理：创建、主控节点资料、详情、启停与关联资源删除保护。
 - 队列管理：创建、槽位及优先级配置、负载、启停与活动作业删除保护。
+- 队列组：在队列管理页管理 SGE 主机组（`@组名`），支持创建、编辑、成员节点与队列关联、搜索、集群筛选及删除。节点和队列必须属于同一集群；删除组前须解除队列关联，引用中的节点、队列及集群受删除保护。
 - CSV 导出、操作事件、通知中心、集群筛选、自动刷新偏好以及移动端导航。
 
 ## 数据与边界
 
 **当前为演示模式，不会连接或修改真实 Grid Engine 集群，也不会执行提交的脚本。** 首次运行生成 3 个集群、24 个节点和 156 个作业；更改保存到 `server/data.json`。通过 `DATA_FILE=/path/to/data.json` 可使用独立数据文件。趋势图和昨日对比为演示数据，不是历史监控采样。
+
+队列组按 SGE host group 建模，使用 `hosts` 保存节点 ID、`queueIds` 保存关联队列 ID；队列关联表示演示环境中的队列 `hostlist` 主机组引用，不执行 `qconf`。当前不支持嵌套主机组。已有数据文件会兼容加载，默认队列组为空，不修改原有资源。
 
 角色字段仅展示用户资料，未实现认证或服务端 RBAC。请勿直接将此演示服务暴露到公网。真实部署还需：登录认证、服务端权限校验、审计持久化，以及在受信任的 Grid Engine 提交主机上实现 `qstat`、`qhost`、`qconf`、`qsub`、`qmod`、`qdel` 命令适配器。命令调用应使用参数数组而非拼接 shell 字符串，并以有权限的系统账户运行。控制台中的集群启停与节点上下线仅修改演示状态，不代表操作系统关机。
 
@@ -44,6 +47,9 @@ pnpm start
 | POST | `/api/:resource` | 创建资源 |
 | PATCH | `/api/:resource/:id` | 修改状态 |
 | DELETE | `/api/:resource/:id` | 删除非作业资源 |
+| POST | `/api/hostGroups` | 创建队列组：`name`、`cluster`、`hosts`、`queueIds` |
+| PATCH | `/api/hostGroups/:id` | 完整更新队列组配置 |
+| DELETE | `/api/hostGroups/:id` | 删除已解除队列关联的队列组 |
 
 `resource` 为 `clusters`、`nodes`、`queues`、`users` 或 `jobs`。作业终止使用 PATCH，状态为 `deleted`；历史记录保留。接口使用 Zod 校验，错误以 JSON 返回。
 

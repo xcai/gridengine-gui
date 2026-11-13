@@ -1,0 +1,13 @@
+.queue-view-tabs{display:flex;gap:24px;border-bottom:1px solid var(--border);margin-bottom:18px}
+.queue-view-tabs button{display:flex;align-items:center;gap:7px;padding:12px 2px;border-bottom:2px solid transparent;color:#717a76}
+.queue-view-tabs button[aria-selected="true"]{border-bottom-color:#228261;color:#228261;font-weight:600}
+.queue-groups .panel-heading{gap:12px;flex-wrap:wrap}
+.queue-groups .panel-heading>div{display:flex;align-items:center;gap:8px}
+.queue-groups .group-members{min-width:170px;max-width:320px;white-space:normal;overflow-wrap:anywhere;padding-top:12px;padding-bottom:12px}
+.queue-groups .modal{max-height:calc(100dvh - 32px);overflow-y:auto}
+.group-options{min-width:0;border:1px solid var(--border);border-radius:6px;padding:12px;margin:0}
+.group-options legend{padding:0 6px;font-size:12px}
+.group-options>div{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;max-height:176px;overflow:auto}
+.queue-groups .group-options label{display:flex;flex-direction:row;align-items:center;gap:8px;overflow-wrap:anywhere;min-width:0}
+.queue-groups .group-options input{width:15px;height:15px;min-height:0;flex-shrink:0;margin:0;accent-color:#228261}
+@media(max-width:400px){.group-options>div{grid-template-columns:minmax(0,1fr)}}

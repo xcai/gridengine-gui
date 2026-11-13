@@ -39,6 +39,7 @@ try { data = JSON.parse(await readFile(storage, 'utf8')) } catch (error) {
   data = initialData()
 }
 let writeChain = Promise.resolve()
+data.hostGroups ??= []
 const persist = () => {
   const snapshot = JSON.stringify(data, null, 2)
   writeChain = writeChain.catch(() => {}).then(() => writeFile(storage, snapshot))
@@ -46,6 +47,41 @@ const persist = () => {
 }
 const record = (title) => data.events.unshift({ id: Date.now(), type: 'info', title, detail: 'admin · 演示环境', time: new Date().toLocaleTimeString('zh-CN', { hour12: false }) })
 app.get('/api/state', (_request, response) => response.json({ ...data, mode: 'demo' }))
+
+const hostGroupSchema = z.object({
+  name: z.string().regex(/^@[a-zA-Z][a-zA-Z0-9_.-]{0,62}$/, '组名须以 @ 和英文字母开头'),
+  cluster: z.string().min(1),
+  hosts: z.array(z.string()).max(4096).refine(values => new Set(values).size === values.length),
+  queueIds: z.array(z.string()).max(4096).refine(values => new Set(values).size === values.length),
+})
+async function saveHostGroup(request, response) {
+  const existing = request.params.id ? data.hostGroups.find(item => item.id === request.params.id) : null
+  if (request.params.id && !existing) return response.status(404).json({ error: '队列组不存在' })
+  const parsed = hostGroupSchema.safeParse(request.body)
+  if (!parsed.success) return response.status(400).json({ error: '请检查组名、成员节点及关联队列', details: parsed.error.issues })
+  const values = parsed.data
+  if (!data.clusters.some(item => item.id === values.cluster)) return response.status(400).json({ error: '集群不存在' })
+  if (data.hostGroups.some(item => item.id !== existing?.id && item.cluster === values.cluster && item.name === values.name)) return response.status(409).json({ error: '该集群中已存在同名队列组' })
+  if (values.hosts.some(id => !data.nodes.some(item => item.id === id && item.cluster === values.cluster))) return response.status(400).json({ error: '成员节点必须属于所选集群' })
+  if (values.queueIds.some(id => !data.queues.some(item => item.id === id && item.cluster === values.cluster))) return response.status(400).json({ error: '关联队列必须属于所选集群' })
+  const item = existing || { id: crypto.randomUUID() }
+  Object.assign(item, values)
+  if (!existing) data.hostGroups.unshift(item)
+  record(`${existing ? '更新' : '创建'}队列组 ${item.name}`)
+  await persist()
+  response.status(existing ? 200 : 201).json(item)
+}
+app.post('/api/hostGroups', saveHostGroup)
+app.patch('/api/hostGroups/:id', saveHostGroup)
+app.delete('/api/hostGroups/:id', async (request, response) => {
+  const item = data.hostGroups.find(entry => entry.id === request.params.id)
+  if (!item) return response.status(404).json({ error: '队列组不存在' })
+  if (item.queueIds.length) return response.status(409).json({ error: '请先解除队列组的队列关联' })
+  data.hostGroups = data.hostGroups.filter(entry => entry.id !== item.id)
+  record(`删除队列组 ${item.name}`)
+  await persist()
+  response.json({ success: true })
+})
 
 const schemas = {
   jobs: z.object({ name: z.string().min(1).max(80), queue: z.string().min(1), slots: z.coerce.number().int().min(1).max(512), command: z.string().min(1).max(20000), user: z.string().default('admin') }),
@@ -98,6 +134,9 @@ app.delete('/api/:resource/:id', async (request, response) => {
   const item = data[resource].find(entry => entry.id === id)
   if (!item) return response.status(404).json({ error: '记录不存在' })
   if (resource === 'users' && id === 'admin') return response.status(400).json({ error: '不能删除当前管理员' })
+  if (resource === 'clusters' && data.hostGroups.some(entry => entry.cluster === id)) return response.status(409).json({ error: '请先删除集群关联的队列组' })
+  if (resource === 'nodes' && data.hostGroups.some(entry => entry.hosts.includes(id))) return response.status(409).json({ error: '请先将节点移出队列组' })
+  if (resource === 'queues' && data.hostGroups.some(entry => entry.queueIds.includes(id))) return response.status(409).json({ error: '请先解除队列的队列组关联' })
   if (resource === 'clusters' && [...data.nodes, ...data.queues, ...data.jobs].some(entry => entry.cluster === id)) return response.status(409).json({ error: '请先移除集群关联的节点、队列及作业' })
   if (resource === 'queues' && data.jobs.some(entry => entry.queue === id && ['running', 'pending', 'held'].includes(entry.status))) return response.status(409).json({ error: '该队列仍有活动作业' })
   data[resource] = data[resource].filter(entry => entry.id !== id)

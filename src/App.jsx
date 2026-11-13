@@ -2,6 +2,7 @@ import { useEffect, useEffectEvent, useState } from 'react'
 import { Activity, ArrowDownToLine, ArrowRight, ArrowUpRight, Bell, Boxes, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Clock3, Cpu, Database, Ellipsis, ExternalLink, FileCode2, FolderKanban, Layers3, LayoutDashboard, ListFilter, LoaderCircle, Menu, MoreHorizontal, Network, Pause, Play, Plus, RefreshCw, Search, Server, Settings2, ShieldCheck, Terminal, Trash2, Users, Workflow, X, XCircle } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import './App.css'
+import QueueGroups from './QueueGroups'
 
 const navigation = [
   { section: '工作空间', items: [{ id: 'overview', name: '集群概览', icon: LayoutDashboard }, { id: 'jobs', name: '作业管理', icon: FolderKanban }, { id: 'queues', name: '队列管理', icon: Layers3 }] },
@@ -39,6 +40,7 @@ export default function App() {
   const [lastUpdated, setLastUpdated] = useState(() => new Date())
   const [autoRefresh, setAutoRefresh] = useState(() => localStorage.getItem('ge-auto-refresh') !== 'false')
   const [saving, setSaving] = useState(false)
+  const [queueTab, setQueueTab] = useState('queues')
 
   const notify = (message, type = 'success') => setToast({ message, type })
   async function load(manual = false) {
@@ -161,7 +163,8 @@ export default function App() {
       <section className="panel activity-panel"><PanelHeader title="近期事件" action="查看全部" onAction={() => navigate('events')} /><div className="recent-events">{data.events.slice(0, 3).map(event => <div className="recent-event" key={event.id}><span className={`event-icon ${event.type}`}>{event.type === 'success' ? <CheckCircle2 size={16} /> : event.type === 'error' ? <XCircle size={16} /> : <Activity size={16} />}</span><div><strong>{event.title}</strong><p>{event.detail}</p></div><time>{event.time}</time></div>)}</div></section>
     </>}
     {view === 'jobs' && renderJobs()}
-    {['nodes', 'queues', 'clusters', 'users'].includes(view) && renderManagement()}
+    {view === 'queues' && <div className="queue-view-tabs" role="tablist" aria-label="队列管理视图"><button role="tab" aria-selected={queueTab === 'queues'} onClick={() => setQueueTab('queues')}><Layers3 size={16} />队列</button><button role="tab" aria-selected={queueTab === 'groups'} onClick={() => setQueueTab('groups')}><Network size={16} />队列组</button></div>}
+    {['nodes', 'queues', 'clusters', 'users'].includes(view) && (view === 'queues' && queueTab === 'groups' ? <QueueGroups data={data} cluster={cluster} onSaved={load} notify={notify} /> : renderManagement())}
     {view === 'events' && <section className="panel"><PanelHeader title="系统事件" note={<span className="count-pill">{data.events.length}</span>} /><div className="event-list">{data.events.map(event => <div className="recent-event" key={event.id}><span className={`event-icon ${event.type}`}><Activity size={18} /></span><div><strong>{event.title}</strong><p>{event.detail}</p></div><time>{event.time}</time></div>)}</div></section>}
     {view === 'settings' && <section className="panel settings-panel"><PanelHeader title="控制台偏好" /><div className="setting-row"><div><strong>自动刷新</strong><p>每 30 秒从 API 获取最新集群状态</p></div><button className={`toggle ${autoRefresh ? 'on' : ''}`} role="switch" aria-checked={autoRefresh} aria-label="自动刷新" onClick={() => { setAutoRefresh(!autoRefresh); localStorage.setItem('ge-auto-refresh', String(!autoRefresh)); notify('刷新偏好已保存') }}><span /></button></div><div className="setting-row"><div><strong>数据环境</strong><p>当前使用本地持久化演示数据，不会执行真实集群命令</p></div><span className="environment"><span />演示环境</span></div><div className="setting-row"><div><strong>后端 API</strong><p className="mono">/api/state · Node.js / Express</p></div><span className="badge online"><i />已连接</span></div><div className="setting-row"><div><strong>Grid Engine 连接</strong><p>真实集群适配器尚未配置，当前不支持 qstat / qsub / qconf 执行。</p></div><ShieldCheck size={23} className="muted" /></div></section>}
     </>}
