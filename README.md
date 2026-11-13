@@ -8,17 +8,19 @@
 
 ```sh
 pnpm install
-pnpm dev
+pnpm dev:demo
 ```
 
 开发模式同时启动 API 和前端。Vite 默认使用 5173，端口占用时自动选择下一个可用端口，以终端输出为准。API 默认使用 3101；设置 `API_PORT` 后，开发代理自动使用相同端口。
 
 ```sh
-pnpm build
-pnpm start
+pnpm build:demo
+pnpm start:demo
 ```
 
 构建后由 Express 提供静态文件和 API，访问 `http://localhost:3101`。`pnpm preview` 仅预览前端产物，不会启动 API。
+
+`dev:demo` / `dev:live`、`start:demo` / `start:live` 分别选择后端模式；`build:demo` / `build:live` 使用对应的 Vite mode 加载构建配置。未区分模式的 `dev`、`start`、`build` 命令仍保留，其中后端默认使用 demo 模式。
 
 ## Demo 与 Live
 
@@ -36,10 +38,10 @@ qhost -xml
 qconf -sql
 qconf -shgrpl
 
-GRIDENGINE_MODE=live pnpm dev
+pnpm dev:live
 ```
 
-请将环境脚本路径替换为实际路径。生产运行使用 `pnpm build` 后执行 `GRIDENGINE_MODE=live pnpm start`。进程继承当前 shell 的 `SGE_ROOT`、`SGE_CELL`、`PATH`、SGE 端口等环境变量；不会自动加载环境脚本或 `.env` 文件。通过 systemd 等运行时，应在服务中显式配置这些环境变量。
+请将环境脚本路径替换为实际路径。生产运行使用 `pnpm build:live` 后执行 `pnpm start:live`。进程继承当前 shell 的 `SGE_ROOT`、`SGE_CELL`、`PATH`、SGE 端口等环境变量；不会自动加载环境脚本或 `.env` 文件。通过 systemd 等运行时，应在服务中显式配置这些环境变量。
 
 | 可选环境变量 | 默认值 | 用途 |
 | --- | --- | --- |
