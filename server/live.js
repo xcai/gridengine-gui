@@ -9,6 +9,7 @@ const list = value => value == null || value === '' ? [] : Array.isArray(value) 
 const number = value => value == null || String(value).trim() === '' || !Number.isFinite(Number(value)) ? null : Number(value)
 const percentage = (used, total) => used == null || !total ? null : Math.round(Math.max(0, Math.min(100, used / total * 100)))
 const tokens = value => !value || value === 'NONE' ? [] : value.trim().split(/\s+/)
+const entries = output => [...new Set(output.split(/\s+/).filter(value => value && value !== 'NONE'))].map(name => ({ id: name, name }))
 
 function failure(message) { return Object.assign(new Error(message), { status: 502, code: 'SGE_QUERY_FAILED' }) }
 function xml(output, root, command) {
@@ -102,9 +103,9 @@ export function createLiveAdapter(env = process.env, runCommand) {
     return [...new Set(values)]
   }
   async function collect() {
-    const [jobXml, hostXml, queueXml, queueList, groupList] = await Promise.all([
+    const [jobXml, hostXml, queueXml, queueList, groupList, managerList, operatorList, userList] = await Promise.all([
       run('qstat', ['-xml', '-u', '*']), run('qhost', ['-xml']), run('qstat', ['-f', '-xml', '-u', '*']),
-      run('qconf', ['-sql']), run('qconf', ['-shgrpl']),
+      run('qconf', ['-sql']), run('qconf', ['-shgrpl']), run('qconf', ['-sm']), run('qconf', ['-so']), run('qconf', ['-sul']),
     ])
     const jobs = parseJobs(jobXml, cluster), nodes = parseNodes(hostXml, cluster), instances = parseQueueInstances(queueXml)
     const queues = await mapLimited(names(queueList, 'queue'), async name => {
@@ -123,6 +124,7 @@ export function createLiveAdapter(env = process.env, runCommand) {
       clusters: [{ id: cluster, name: env.SGE_CLUSTER_NAME || env.SGE_CELL || 'Grid Engine', host: env.SGE_QMASTER_HOST || '-', status: 'online', description: env.SGE_CELL || '', version: '-' }],
       nodes, queues, jobs, hostGroups,
       users: [...new Set(jobs.map(item => item.user).filter(name => name !== '-'))].map(name => ({ id: name, name, email: '-', role: 'observed', status: 'active', department: '-' })),
+      userManagers: entries(managerList), userOperators: entries(operatorList), userLists: entries(userList),
       events: [],
     }
   }

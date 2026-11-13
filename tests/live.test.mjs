@@ -14,6 +14,7 @@ const queuesXml = '<job_info><queue_info><QueueList><name>all.q@node1</name><slo
 const outputs = new Map([
   ['qstat -xml -u *', jobsXml], ['qhost -xml', hostsXml], ['qstat -f -xml -u *', queuesXml],
   ['qconf -sql', 'all.q\n'], ['qconf -shgrpl', '@compute\n@empty\n'],
+  ['qconf -sm', 'manager1\nmanager2\n'], ['qconf -so', 'operator1\n'], ['qconf -sul', 'researchers\nvisitors\n'],
   ['qconf -sq all.q', 'qname all.q\nhostlist @compute\npriority 0\nqtype BATCH INTERACTIVE\n'],
   ['qconf -shgrp @compute', 'group_name @compute\nhostlist node1 \\\n node2\n'],
   ['qconf -shgrp @empty', 'group_name @empty\nhostlist NONE\n'],
@@ -48,7 +49,7 @@ test('collect real command output, aggregate queue slots, share in-flight work a
   const [state, same] = await Promise.all([adapter.getState(), adapter.getState()])
   assert.equal(state, same)
   assert.equal(await adapter.getState(), state)
-  assert.equal(calls.length, 8)
+  assert.equal(calls.length, 11)
   assert.equal(state.readOnly, true)
   assert.equal(state.queues[0].slots, 16)
   assert.equal(state.queues[0].used, 4)
@@ -57,13 +58,17 @@ test('collect real command output, aggregate queue slots, share in-flight work a
   assert.deepEqual(state.hostGroups[0].queueIds, ['all.q'])
   assert.deepEqual(state.hostGroups[1].hosts, [])
   assert.equal(state.users[0].role, 'observed')
+  assert.deepEqual(state.userManagers.map(item => item.name), ['manager1', 'manager2'])
+  assert.deepEqual(state.userOperators.map(item => item.name), ['operator1'])
+  assert.deepEqual(state.userLists.map(item => item.name), ['researchers', 'visitors'])
+  for (const command of ['qconf -sm', 'qconf -so', 'qconf -sul']) assert.ok(calls.some(([, args]) => `qconf ${args.join(' ')}` === command))
   assert.deepEqual(state.events, [])
 })
 test('command failures are explicit, not cached or replaced by demo data', async () => {
   let count = 0
   const adapter = createLiveAdapter({}, async () => { count++; throw Object.assign(new Error('private output'), { code: 'ENOENT' }) })
   for (let attempt = 0; attempt < 2; attempt++) await assert.rejects(adapter.getState(), error => error.status === 502 && /ENOENT/.test(error.message) && !error.message.includes('private output'))
-  assert.equal(count, 10)
+  assert.equal(count, 16)
   assert.throws(() => createLiveAdapter({ SGE_COMMAND_TIMEOUT_MS: 'invalid' }))
 })
 test('reject option-like resource names before passing them to qconf', async () => {
@@ -74,7 +79,7 @@ test('reject option-like resource names before passing them to qconf', async () 
 test('empty cluster stays empty without seeding demo resources', async () => {
   const adapter = createLiveAdapter({}, async (command) => ({ stdout: command === 'qstat' ? '<job_info><queue_info/><job_info/></job_info>' : command === 'qhost' ? '<qhost><host name="global"/></qhost>' : '' }))
   const state = await adapter.getState()
-  for (const resource of ['jobs', 'nodes', 'queues', 'hostGroups', 'users', 'events']) assert.deepEqual(state[resource], [])
+  for (const resource of ['jobs', 'nodes', 'queues', 'hostGroups', 'users', 'userManagers', 'userOperators', 'userLists', 'events']) assert.deepEqual(state[resource], [])
   assert.equal(state.clusters.length, 1)
 })
 test('timeouts return explicit errors and custom binary paths remain argument arrays', async () => {
@@ -130,7 +135,7 @@ test('HTTP live queries execute binaries, reject all writes and never create loc
     assert.equal(state.mode, 'live')
     assert.equal(state.jobs[0].name, 'train')
     assert.equal(state.hostGroups.length, 2)
-    for (const endpoint of ['jobs', 'nodes', 'queues', 'clusters', 'users', 'hostGroups', 'unknown']) {
+    for (const endpoint of ['jobs', 'nodes', 'queues', 'clusters', 'users', 'hostGroups', 'userManagers', 'userOperators', 'userLists', 'unknown']) {
       for (const method of ['POST', 'PATCH', 'PUT', 'DELETE']) {
         const response = await fetch(`${server.url}/api/${endpoint}${method === 'POST' ? '' : '/test'}`, { method })
         assert.equal(response.status, 405)
@@ -139,7 +144,7 @@ test('HTTP live queries execute binaries, reject all writes and never create loc
     }
     const cachedResponse = await fetch(`${server.url}/api/state`)
     assert.equal(cachedResponse.status, 200)
-    assert.equal((await readFile(log, 'utf8')).trim().split('\n').length, 8)
+    assert.equal((await readFile(log, 'utf8')).trim().split('\n').length, 11)
     await assert.rejects(stat(path.dirname(storage)), { code: 'ENOENT' })
   } finally { await server?.close(); await rm(directory, { recursive: true, force: true }) }
 })

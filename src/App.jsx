@@ -42,6 +42,7 @@ export default function App() {
   const [autoRefresh, setAutoRefresh] = useState(() => localStorage.getItem('ge-auto-refresh') !== 'false')
   const [saving, setSaving] = useState(false)
   const [queueTab, setQueueTab] = useState('queues')
+  const [userTab, setUserTab] = useState('userManagers')
   const [mode, setMode] = useState(null)
   const readOnly = mode !== 'demo'
   const environmentLabel = mode === 'live' ? 'LIVE · 只读' : mode === 'demo' ? '演示环境' : '未连接'
@@ -143,7 +144,28 @@ export default function App() {
     </section>
   }
 
+  function renderLiveUsers() {
+    const tabs = [
+      { id: 'userManagers', label: '管理者用户', command: 'qconf -sm', name: '用户名' },
+      { id: 'userOperators', label: '执行者用户', command: 'qconf -so', name: '用户名' },
+      { id: 'userLists', label: '用户组', command: 'qconf -sul', name: '用户组名称' },
+    ]
+    const activeTab = tabs.find(tab => tab.id === userTab) || tabs[0]
+    const rows = (data?.[activeTab.id] || []).filter(item => !query || item.name.toLowerCase().includes(query.toLowerCase()))
+    const usersPages = Math.max(1, Math.ceil(rows.length / 10))
+    const usersPage = Math.min(page, usersPages)
+    const visibleRows = rows.slice((usersPage - 1) * 10, usersPage * 10)
+    return <section className="panel management-panel">
+      <PanelHeader title="Grid Engine 用户管理" note={<><span className="count-pill">{rows.length}</span><span className="mono muted">{activeTab.command}</span></>} />
+      <div className="queue-view-tabs" role="tablist" aria-label="Grid Engine 用户类别">{tabs.map(tab => <button key={tab.id} role="tab" aria-selected={userTab === tab.id} title={tab.command} onClick={() => { setUserTab(tab.id); setQuery(''); setPage(1) }}>{tab.label}</button>)}</div>
+      <div className="management-toolbar"><label className="search"><Search size={16} /><input placeholder={`搜索${activeTab.label}...`} value={query} onChange={event => { setQuery(event.target.value); setPage(1) }} /></label><button className="button" onClick={() => exportRows(rows, userTab)}><ArrowDownToLine size={15} />导出</button></div>
+      <div className="table-scroll"><table><thead><tr><th>{activeTab.name}</th></tr></thead><tbody>{visibleRows.map(item => <tr key={item.id}><td><span className="user-cell"><span className="tiny-avatar">{item.name.slice(0, 1).toUpperCase()}</span>{item.name}</span></td></tr>)}</tbody></table>{!visibleRows.length && <div className="empty-state"><Users size={30} /><h3>暂无{activeTab.label}</h3></div>}</div>
+      <div className="table-footer"><span>共 {rows.length} 条记录</span><div className="pagination"><IconButton icon={ChevronLeft} label="上一页" disabled={usersPage === 1} onClick={() => setPage(usersPage - 1)} /><span>{usersPage} / {usersPages}</span><IconButton icon={ChevronRight} label="下一页" disabled={usersPage === usersPages} onClick={() => setPage(usersPage + 1)} /></div></div>
+    </section>
+  }
+
   function renderManagement() {
+    if (view === 'users' && readOnly) return renderLiveUsers()
     const columns = { nodes: ['节点名称', '所属集群', '状态', 'CPU 使用率', '内存使用率', '配置', 'IP 地址'], queues: ['队列名称', '所属集群', '状态', '槽位使用', '队列类型', '优先级'], clusters: ['集群名称', '主控节点', '状态', '节点数量', 'Grid Engine 版本', '描述'], users: ['用户', '邮箱', '状态', '角色', '部门'] }[view]
     return <section className="panel management-panel">
       <PanelHeader title={readOnly && view === 'users' ? '作业用户' : labels[view]} note={<span className="count-pill">{scoped(view).length}</span>} />
@@ -169,7 +191,7 @@ export default function App() {
       <div className="sidebar-bottom"><div className="engine-health"><span className="live-dot" /><span>{error ? '连接异常' : data ? environmentLabel : '等待连接'}</span><span className="mono">{data?.clusters[0]?.version || '-'}</span></div><button className="help-link" onClick={() => setModal({ kind: 'help', title: '关于 GridEngine' })}><CircleHelp size={17} />帮助与文档<ArrowUpRight size={14} /></button><button className="profile" disabled={readOnly} onClick={() => detail('users', data?.users.find(user => user.id === 'admin') || { name: 'admin', role: 'admin', email: 'admin@gridengine.local' })}><span className="avatar">{readOnly ? 'R' : 'A'}</span><span><strong>{readOnly ? 'Read Only' : 'Administrator'}</strong><small>{readOnly ? '只读访问' : '超级管理员'}</small></span><Ellipsis size={18} /></button></div>
     </aside>
     <div className="main-shell"><header className="topbar"><div className="breadcrumb"><IconButton icon={Menu} label="打开菜单" className="mobile-toggle" onClick={() => setMobileMenu(true)} /><span>工作空间</span><ChevronRight size={13} /><strong>{labels[view]}</strong></div><div className="topbar-actions"><form className="search global-search" onSubmit={event => { event.preventDefault(); navigate('jobs'); setQuery(globalQuery) }}><Search size={16} /><input placeholder="搜索作业、用户..." aria-label="全局搜索" value={globalQuery} onChange={event => setGlobalQuery(event.target.value)} /><kbd>↵</kbd></form><span className="environment"><span />{environmentLabel}</span><div className="notification-wrap"><IconButton icon={Bell} label="通知" onClick={() => setNotifications(!notifications)} />{!readNotifications && !readOnly && <i className="notification-dot" />}{notifications && <div className="notification-popover"><div className="panel-heading"><h2>通知中心</h2><IconButton icon={CheckCheck} label="标记全部已读" onClick={() => setReadNotifications(true)} /></div>{readNotifications ? <div className="empty-state"><CheckCircle2 size={25} /><p>所有通知已读</p></div> : data?.events.slice(0, 3).map(event => <button className="notification-item" key={event.id} onClick={() => { navigate('events'); setNotifications(false) }}><span className={`event-icon ${event.type}`}><Activity size={15} /></span><span><strong>{event.title}</strong><small>{event.time}</small></span></button>)}</div>}</div><div className="top-divider" /><span className="top-avatar">{readOnly ? 'R' : 'A'}</span></div></header>
-    <main><div className="page-heading"><div><div className="eyebrow">COMPUTE WORKSPACE</div><h1>{labels[view]}{view === 'overview' && <span className="live-label"><i />{mode === 'live' ? '只读监控' : '实时监控'}</span>}</h1><p>{descriptions[view]}</p></div><div className="page-actions">{view === 'overview' ? <><button className="button export-button" onClick={() => exportRows(jobs, 'cluster-report')}><ArrowDownToLine size={15} />导出报表</button><button className="button primary" disabled={readOnly} onClick={() => openCreate('jobs')}><Plus size={17} />提交作业</button></> : ['jobs', 'nodes', 'queues', 'clusters', 'users'].includes(view) && <button className="button primary" disabled={readOnly} onClick={() => openCreate(view)}><Plus size={17} />{{ jobs: '提交作业', nodes: '添加节点', queues: '创建队列', clusters: '创建集群', users: '添加用户' }[view]}</button>}</div></div>
+    <main><div className="page-heading"><div><div className="eyebrow">COMPUTE WORKSPACE</div><h1>{labels[view]}{view === 'overview' && <span className="live-label"><i />{mode === 'live' ? '只读监控' : '实时监控'}</span>}</h1><p>{descriptions[view]}</p></div><div className="page-actions">{view === 'overview' ? <><button className="button export-button" onClick={() => exportRows(jobs, 'cluster-report')}><ArrowDownToLine size={15} />导出报表</button><button className="button primary" disabled={readOnly} onClick={() => openCreate('jobs')}><Plus size={17} />提交作业</button></> : ['jobs', 'nodes', 'queues', 'clusters', 'users'].includes(view) && !(view === 'users' && readOnly) && <button className="button primary" disabled={readOnly} onClick={() => openCreate(view)}><Plus size={17} />{{ jobs: '提交作业', nodes: '添加节点', queues: '创建队列', clusters: '创建集群', users: '添加用户' }[view]}</button>}</div></div>
     <div className="context-bar"><div className="cluster-select"><Network size={15} /><select aria-label="选择集群" value={cluster} onChange={event => { setCluster(event.target.value); setPage(1); setSelected([]) }}><option value="all">所有集群</option>{data?.clusters.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select><ChevronDown size={13} /></div><span className="context-divider" /><span className="context-health"><i />{data?.clusters.filter(item => item.status === 'online').length || 0} 个集群运行正常</span><div className="update-status"><span>最后更新 {lastUpdated.toLocaleTimeString('zh-CN', { hour12: false })}</span><IconButton icon={RefreshCw} label="刷新数据" className={loading ? 'spinning' : ''} onClick={() => load(true)} /></div></div>
     {error && <div className="error-banner"><XCircle size={17} />{error}<button onClick={() => load()}>重新连接</button></div>}
     {!data ? <div className="loading-state"><LoaderCircle className="spinning" size={28} /><p>{error ? '等待 API 服务连接' : '正在加载集群数据...'}</p></div> : <>
