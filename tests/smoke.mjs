@@ -10,7 +10,7 @@ const directory = await mkdtemp(path.join(tmpdir(), 'gridengine-test-'))
 const port = process.env.TEST_API_PORT || '3109'
 const api = `http://127.0.0.1:${port}`
 const base = process.env.TEST_BASE_URL || 'http://127.0.0.1:5174'
-const server = spawn(process.execPath, ['server/index.js'], { env: { ...process.env, API_PORT: port, DATA_FILE: path.join(directory, 'state.json') }, stdio: ['ignore', 'pipe', 'pipe'] })
+const server = spawn(process.execPath, ['server/index.js'], { env: { ...process.env, GRIDENGINE_MODE: 'demo', API_PORT: port, DATA_FILE: path.join(directory, 'state.json') }, stdio: ['ignore', 'pipe', 'pipe'] })
 let browser
 const request = async (endpoint, method = 'GET', body) => {
   const response = await fetch(`${api}/api/${endpoint}`, { method, headers: { 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) })

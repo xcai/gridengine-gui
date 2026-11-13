@@ -3,10 +3,18 @@ import { z } from 'zod'
 import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createLiveAdapter } from './live.js'
 
 const directory = path.dirname(fileURLToPath(import.meta.url))
 const storage = process.env.DATA_FILE || path.join(directory, 'data.json')
+const mode = process.env.GRIDENGINE_MODE || 'demo'
+if (!['demo', 'live'].includes(mode)) throw new Error('GRIDENGINE_MODE must be demo or live')
+const live = mode === 'live' ? createLiveAdapter() : null
 const app = express()
+app.use('/api', (request, response, next) => {
+  if (live && !['GET', 'HEAD'].includes(request.method)) return response.set('Allow', 'GET, HEAD').status(405).json({ error: 'live 模式为只读，不允许修改集群', mode, readOnly: true })
+  next()
+})
 app.use(express.json({ limit: '100kb' }))
 
 const initialData = () => ({
@@ -34,19 +42,23 @@ const initialData = () => ({
 })
 
 let data
-try { data = JSON.parse(await readFile(storage, 'utf8')) } catch (error) {
-  if (error.code !== 'ENOENT') throw error
-  data = initialData()
+if (!live) {
+  try { data = JSON.parse(await readFile(storage, 'utf8')) } catch (error) {
+    if (error.code !== 'ENOENT') throw error
+    data = initialData()
+  }
+  data.hostGroups ??= []
 }
 let writeChain = Promise.resolve()
-data.hostGroups ??= []
 const persist = () => {
   const snapshot = JSON.stringify(data, null, 2)
   writeChain = writeChain.catch(() => {}).then(() => writeFile(storage, snapshot))
   return writeChain
 }
 const record = (title) => data.events.unshift({ id: Date.now(), type: 'info', title, detail: 'admin · 演示环境', time: new Date().toLocaleTimeString('zh-CN', { hour12: false }) })
-app.get('/api/state', (_request, response) => response.json({ ...data, mode: 'demo' }))
+app.get('/api/state', async (_request, response) => {
+  response.set('Cache-Control', 'no-store').json(live ? await live.getState() : { ...data, mode, readOnly: false })
+})
 
 const hostGroupSchema = z.object({
   name: z.string().regex(/^@[a-zA-Z][a-zA-Z0-9_.-]{0,62}$/, '组名须以 @ 和英文字母开头'),
@@ -151,11 +163,11 @@ app.get('/{*path}', (request, response) => {
 })
 app.use((error, _request, response, _next) => {
   console.error(error.message)
-  response.status(error.status || 500).json({ error: '请求失败，请稍后重试' })
+  response.status(error.status || 500).json({ error: error.code === 'SGE_QUERY_FAILED' ? error.message : '请求失败，请稍后重试', mode, readOnly: Boolean(live) })
 })
-await mkdir(path.dirname(storage), { recursive: true })
+if (!live) await mkdir(path.dirname(storage), { recursive: true })
 const port = process.env.API_PORT || 3101
 app.listen(port, '0.0.0.0', error => {
   if (error) { console.error(`API startup failed: ${error.message}`); process.exitCode = 1; return }
-  console.log(`Grid Engine API: http://localhost:${port} (demo)`)
+  console.log(`Grid Engine API: http://localhost:${port} (${mode}${live ? ', read-only' : ''})`)
 })

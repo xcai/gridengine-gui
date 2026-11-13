@@ -3,6 +3,7 @@ import { Layers3, LoaderCircle, Pencil, Plus, Save, Search, Trash2, X } from 'lu
 import './QueueGroups.css'
 
 export default function QueueGroups({ data, cluster, onSaved, notify }) {
+  const readOnly = data.mode === 'live' || data.readOnly
   const [query, setQuery] = useState('')
   const [editor, setEditor] = useState(null)
   const [removing, setRemoving] = useState(null)
@@ -28,6 +29,7 @@ export default function QueueGroups({ data, cluster, onSaved, notify }) {
   }
   async function submit(event) {
     event.preventDefault()
+    if (readOnly) return
     setSaving(true); setError('')
     try {
       const item = removing || editor
@@ -44,11 +46,11 @@ export default function QueueGroups({ data, cluster, onSaved, notify }) {
     } catch (failure) { setError(failure.message) } finally { setSaving(false) }
   }
   return <section className="panel management-panel queue-groups">
-    <div className="panel-heading"><div><h2>SGE 队列组</h2><span className="count-pill">{groups.length}</span></div><button className="button primary" disabled={!data.clusters.length} onClick={() => edit()}><Plus size={16} />创建队列组</button></div>
+    <div className="panel-heading"><div><h2>SGE 队列组</h2><span className="count-pill">{groups.length}</span></div><button className="button primary" disabled={readOnly || !data.clusters.length} onClick={() => edit()}><Plus size={16} />创建队列组</button></div>
     <div className="management-toolbar"><label className="search"><Search size={16} /><input aria-label="搜索队列组" placeholder="搜索组名、节点、队列..." value={query} onChange={event => setQuery(event.target.value)} /></label></div>
     <div className="table-scroll"><table><thead><tr>{['组名', '所属集群', '成员节点', '关联队列', '操作'].map(title => <th key={title}>{title}</th>)}</tr></thead><tbody>{groups.map(item => <tr key={item.id}>
-      <td><button className="resource-name" onClick={() => edit(item)}><Layers3 size={16} />{item.name}</button></td><td>{clusterName(item.cluster)}</td><td className="group-members">{item.hosts.join(', ') || '无'}</td><td className="group-members">{item.queueIds.join(', ') || '无'}</td>
-      <td><div className="row-actions"><button className="icon-button" title="编辑队列组" aria-label="编辑队列组" onClick={() => edit(item)}><Pencil size={16} /></button><button className="icon-button" title="删除队列组" aria-label="删除队列组" onClick={() => { setError(''); setRemoving(item) }}><Trash2 size={16} /></button></div></td>
+      <td>{readOnly ? <span className="resource-name"><Layers3 size={16} />{item.name}</span> : <button className="resource-name" onClick={() => edit(item)}><Layers3 size={16} />{item.name}</button>}</td><td>{clusterName(item.cluster)}</td><td className="group-members">{item.hosts.join(', ') || '无'}</td><td className="group-members">{item.queueIds.join(', ') || '无'}</td>
+      <td><div className="row-actions"><button className="icon-button" title="编辑队列组" aria-label="编辑队列组" disabled={readOnly} onClick={() => edit(item)}><Pencil size={16} /></button><button className="icon-button" title="删除队列组" aria-label="删除队列组" disabled={readOnly} onClick={() => { setError(''); setRemoving(item) }}><Trash2 size={16} /></button></div></td>
     </tr>)}</tbody></table>{!groups.length && <div className="empty-state"><Layers3 size={28} /><h3>{query ? '没有匹配的队列组' : '暂无队列组'}</h3></div>}</div>
     {isOpen && <div className="modal-backdrop" onClick={event => { if (event.target === event.currentTarget) close() }}><section ref={dialog} className="modal" role="dialog" aria-modal="true" aria-label={removing ? '删除队列组' : editor.id ? '编辑队列组' : '创建队列组'} onKeyDown={event => {
       if (event.key === 'Escape') close()
