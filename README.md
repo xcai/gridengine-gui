@@ -23,6 +23,43 @@ pnpm start:demo
 
 `dev:demo` / `dev:live`、`start:demo` / `start:live` 分别选择后端模式；`build:demo` / `build:live` 使用对应的 Vite mode 加载构建配置。未区分模式的 `dev`、`start`、`build` 命令仍保留，其中后端默认使用 demo 模式。
 
+## Docker Compose
+
+需要 Docker Engine 和 Docker Compose v2，无需在宿主机安装 Node.js 或 pnpm。Dockerfile 使用 Node.js 22、多阶段构建及锁文件安装依赖；生产前端由 Nginx 提供，`/api/` 转发到独立 Node 服务，API 不映射宿主机端口。
+
+### 开发环境
+
+```sh
+docker compose --profile dev build dev
+docker compose --profile dev run --rm --no-deps dev pnpm admin:users create admin --role admin
+docker compose --profile dev up dev
+```
+
+访问 `http://localhost:5173`。源码挂载到容器，前端和后端支持热更新；依赖保存在独立卷中，启动时同步锁文件。修改依赖后重启 dev 服务；修改 Dockerfile 后重新构建。使用 `DEV_PORT=5174 docker compose --profile dev up dev` 可更换宿主机端口。
+
+### 生产环境
+
+```sh
+docker compose --profile prod build
+docker compose --profile prod run --rm --no-deps api pnpm admin:users create admin --role admin
+docker compose --profile prod up -d
+```
+
+Nginx 在 `http://127.0.0.1:8080` 提供构建生成的 `dist`；发布新版时执行 `docker compose --profile prod up -d --build`。使用 `WEB_PORT` 可更换端口。默认仅绑定宿主机回环地址，应由宿主机 HTTPS 反向代理对外提供服务；生产默认启用 `COOKIE_SECURE=true`。仅本地 HTTP 验证时，用 `COOKIE_SECURE=false docker compose --profile prod up -d` 启动，否则浏览器无法在 HTTP 下使用登录 Cookie。此配置本身不终止 TLS。
+
+开发和生产分别使用 `dev-data`、`prod-data` 命名卷保存 `/data/data.json` 和 `/data/auth.json`，账号相互独立；不会复制宿主机已有的账号或演示数据到镜像。按需备份卷并限制 Docker 管理权限。生产账号管理示例：
+
+```sh
+docker compose --profile prod exec api pnpm admin:users list
+docker compose --profile prod exec api pnpm admin:users update admin --reset-password
+docker compose --profile prod logs -f
+docker compose --profile prod down
+```
+
+开发环境使用 `docker compose --profile dev down` 停止。`down` 保留数据，`down -v` 会删除对应命名卷中的数据，请谨慎操作。
+
+容器默认运行 demo。Live 部署不能仅设置 `GRIDENGINE_MODE=live`：还需按目标集群扩展 Node 镜像，安装兼容的 SGE 客户端、挂载集群配置，并在 Compose 中显式传入 SGE 环境变量和配置集群可达的网络；详见下方 Live 说明。不要直接挂载与容器系统不兼容的宿主机二进制文件。
+
 ## 登录与账号管理
 
 首次启动前执行 `pnpm admin:users create admin --role admin`，在终端交互输入并确认密码（输入不回显）。无默认账号或默认密码，密码长度为 12–128 个字符；账号以字母开头，长度 2–40，仅支持字母、数字、下划线和连字符。未初始化账号时，页面可打开，但不能登录或访问集群数据。

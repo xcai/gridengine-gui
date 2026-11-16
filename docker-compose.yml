@@ -1,0 +1,64 @@
+services:
+  dev:
+    profiles: [dev]
+    build:
+      context: .
+      target: development
+    init: true
+    ports:
+      - "127.0.0.1:${DEV_PORT:-5173}:5173"
+    environment:
+      GRIDENGINE_MODE: ${GRIDENGINE_MODE:-demo}
+      API_PORT: "3101"
+      DATA_FILE: /data/data.json
+      AUTH_FILE: /data/auth.json
+      COOKIE_SECURE: "false"
+    volumes:
+      - .:/app
+      - dev-node-modules:/app/node_modules
+      - dev-data:/data
+    command: sh -c "pnpm install --frozen-lockfile && pnpm dev"
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:5173/').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      start_period: 30s
+      retries: 12
+
+  api:
+    profiles: [prod]
+    build:
+      context: .
+      target: api
+    init: true
+    restart: unless-stopped
+    environment:
+      GRIDENGINE_MODE: ${GRIDENGINE_MODE:-demo}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+    volumes:
+      - prod-data:/data
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:3101/api/auth/me').then(response => process.exit([200, 401].includes(response.status) ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  nginx:
+    profiles: [prod]
+    build:
+      context: .
+      target: production
+      args:
+        BUILD_MODE: ${GRIDENGINE_MODE:-demo}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${WEB_PORT:-8080}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+
+volumes:
+  dev-node-modules:
+  dev-data:
+  prod-data:
