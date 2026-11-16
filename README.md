@@ -27,6 +27,14 @@ pnpm start:demo
 
 需要 Docker Engine 和 Docker Compose v2，无需在宿主机安装 Node.js 或 pnpm。Dockerfile 使用 Node.js 22、多阶段构建及锁文件安装依赖；生产前端由 Nginx 提供，`/api/` 转发到独立 Node 服务，API 不映射宿主机端口。
 
+首次使用时，将环境变量模板复制为 `.env`，按需修改配置；Docker Compose 会自动读取：
+
+```sh
+cp .env.example .env
+```
+
+模板包含 `GRIDENGINE_MODE`、`DEV_PORT`、`WEB_PORT` 和 `COOKIE_SECURE`，默认值与 Compose 配置一致。`.env` 已忽略提交；命令行环境变量优先于 `.env` 中的值。
+
 ### 开发环境
 
 ```sh
