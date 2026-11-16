@@ -10,7 +10,7 @@ import { createLiveAdapter, parseConfig, parseJobs, parseNodes } from '../server
 import { changeAccount } from '../server/auth.js'
 
 const jobsXml = '<job_info><queue_info><job_list state="running"><JB_job_number>42</JB_job_number><JB_name>train</JB_name><JB_owner>alice</JB_owner><state>r</state><queue_name>all.q@node1</queue_name><slots>4</slots><tasks>1</tasks></job_list></queue_info><job_info><job_list state="pending"><JB_job_number>43</JB_job_number><JB_name>wait</JB_name><JB_owner>bob</JB_owner><state>hqw</state><slots>1</slots></job_list></job_info></job_info>'
-const hostsXml = '<qhost><host name="global"/><host name="node1"><hostvalue name="num_proc">8</hostvalue><hostvalue name="load_avg">2.5</hostvalue><hostvalue name="mem_total">64G</hostvalue><hostvalue name="mem_used">16G</hostvalue></host><host name="node2"><hostvalue name="num_proc">-</hostvalue><hostvalue name="load_avg">-</hostvalue></host></qhost>'
+const hostsXml = '<qhost><host name="global"><hostvalue name="arch_string">-</hostvalue></host><host name="node1"><hostvalue name="arch_string">lx-amd64</hostvalue><hostvalue name="num_proc">64</hostvalue><hostvalue name="m_socket">2</hostvalue><hostvalue name="m_core">32</hostvalue><hostvalue name="m_thread">64</hostvalue><hostvalue name="load_avg">2.21</hostvalue><hostvalue name="mem_total">251.4G</hostvalue><hostvalue name="mem_used">52.7G</hostvalue><hostvalue name="swap_total">8.0G</hostvalue><hostvalue name="swap_used">74.4M</hostvalue></host><host name="node2"><hostvalue name="num_proc">-</hostvalue><hostvalue name="load_avg">-</hostvalue></host></qhost>'
 const queuesXml = '<job_info><queue_info><QueueList><name>all.q@node1</name><slots_total>8</slots_total><slots_used>4</slots_used></QueueList><QueueList><name>all.q@node2</name><slots_total>8</slots_total><slots_used>0</slots_used><state>d</state></QueueList></queue_info></job_info>'
 const outputs = new Map([
   ['qstat -xml -u *', jobsXml], ['qhost -xml', hostsXml], ['qstat -f -xml -u *', queuesXml],
@@ -26,11 +26,27 @@ test('parse SGE XML, array tasks, held jobs and missing metrics without invented
   assert.equal(jobs[1].status, 'held')
   assert.equal(jobs[0].node, 'node1')
   const nodes = parseNodes(hostsXml, 'sge')
-  assert.equal(nodes.length, 2)
-  assert.equal(nodes[0].memory, 25)
-  assert.equal(nodes[0].cpu, null)
-  assert.equal(nodes[1].status, 'offline')
-  assert.equal(nodes[1].cores, null)
+  assert.equal(nodes.length, 3)
+  const globalNode = nodes.find(item => item.id === 'global')
+  const node = nodes.find(item => item.id === 'node1')
+  const offlineNode = nodes.find(item => item.id === 'node2')
+  assert.equal(globalNode.status, 'unknown')
+  assert.equal(globalNode.arch, '-')
+  assert.equal(node.memory, 21)
+  assert.equal(node.cpu, null)
+  assert.equal(node.arch, 'lx-amd64')
+  assert.equal(node.sockets, 2)
+  assert.equal(node.coresPerSocket, 32)
+  assert.equal(node.threadsPerCore, 64)
+  assert.equal(node.load, 2.21)
+  assert.equal(node.ram, 251.4)
+  assert.equal(node.memoryUsed, 52.7)
+  assert.equal(node.ramText, '251.4G')
+  assert.equal(node.memoryUsedText, '52.7G')
+  assert.equal(node.swapTotalText, '8.0G')
+  assert.equal(node.swapUsedText, '74.4M')
+  assert.equal(offlineNode.status, 'offline')
+  assert.equal(offlineNode.cores, null)
   assert.deepEqual(parseConfig('hostlist node1 \\\n node2\n'), { hostlist: 'node1 node2' })
   assert.throws(() => parseJobs('not XML', 'sge'), /XML/)
   assert.throws(() => parseJobs('<unexpected/>', 'sge'), /XML/)
@@ -80,7 +96,8 @@ test('reject option-like resource names before passing them to qconf', async () 
 test('empty cluster stays empty without seeding demo resources', async () => {
   const adapter = createLiveAdapter({}, async (command) => ({ stdout: command === 'qstat' ? '<job_info><queue_info/><job_info/></job_info>' : command === 'qhost' ? '<qhost><host name="global"/></qhost>' : '' }))
   const state = await adapter.getState()
-  for (const resource of ['jobs', 'nodes', 'queues', 'hostGroups', 'users', 'userManagers', 'userOperators', 'userLists', 'events']) assert.deepEqual(state[resource], [])
+  for (const resource of ['jobs', 'queues', 'hostGroups', 'users', 'userManagers', 'userOperators', 'userLists', 'events']) assert.deepEqual(state[resource], [])
+  assert.deepEqual(state.nodes.map(node => node.id), ['global'])
   assert.equal(state.clusters.length, 1)
 })
 test('timeouts return explicit errors and custom binary paths remain argument arrays', async () => {

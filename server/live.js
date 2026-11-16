@@ -57,11 +57,21 @@ export function parseJobs(output, cluster) {
   })
 }
 export function parseNodes(output, cluster) {
-  return list(xml(output, 'qhost', 'qhost').host).filter(item => item['@_name'] !== 'global').map(item => {
+  return list(xml(output, 'qhost', 'qhost').host).map(item => {
     const values = Object.fromEntries(list(item.hostvalue).map(value => [value['@_name'], value['#text']]))
     const cores = number(values.num_proc), load = number(values.load_avg)
-    const ram = gigabytes(values.mem_total), used = gigabytes(values.mem_used)
-    return { id: item['@_name'], name: item['@_name'], cluster, status: load == null ? 'offline' : 'online', cpu: null, load, memory: percentage(used, ram), cores, ram, ip: '-' }
+    const ram = gigabytes(values.mem_total), memoryUsed = gigabytes(values.mem_used)
+    const global = item['@_name'] === 'global'
+    return {
+      id: item['@_name'], name: item['@_name'], cluster,
+      status: global ? 'unknown' : load == null ? 'offline' : 'online', cpu: null, load,
+      arch: values.arch_string || values.arch || null, sockets: number(values.m_socket), coresPerSocket: number(values.m_core), threadsPerCore: number(values.m_thread),
+      memory: percentage(memoryUsed, ram), memoryUsed, ram,
+      ramText: values.mem_total || null, memoryUsedText: values.mem_used || null,
+      swapTotal: gigabytes(values.swap_total), swapUsed: gigabytes(values.swap_used),
+      swapTotalText: values.swap_total || null, swapUsedText: values.swap_used || null,
+      cores, ip: '-',
+    }
   })
 }
 export function parseQueueInstances(output) {
