@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import net from 'node:net'
 import { createLiveAdapter, parseConfig, parseJobs, parseNodes } from '../server/live.js'
+import { changeAccount } from '../server/auth.js'
 
 const jobsXml = '<job_info><queue_info><job_list state="running"><JB_job_number>42</JB_job_number><JB_name>train</JB_name><JB_owner>alice</JB_owner><state>r</state><queue_name>all.q@node1</queue_name><slots>4</slots><tasks>1</tasks></job_list></queue_info><job_info><job_list state="pending"><JB_job_number>43</JB_job_number><JB_name>wait</JB_name><JB_owner>bob</JB_owner><state>hqw</state><slots>1</slots></job_list></job_info></job_info>'
 const hostsXml = '<qhost><host name="global"/><host name="node1"><hostvalue name="num_proc">8</hostvalue><hostvalue name="load_avg">2.5</hostvalue><hostvalue name="mem_total">64G</hostvalue><hostvalue name="mem_used">16G</hostvalue></host><host name="node2"><hostvalue name="num_proc">-</hostvalue><hostvalue name="load_avg">-</hostvalue></host></qhost>'
@@ -102,6 +103,9 @@ test('invalid mode fails at startup rather than silently using demo', async () =
 })
 
 async function startServer(env) {
+  const accountFile = path.join(path.dirname(env.DATA_FILE), 'auth.json')
+  await changeAccount('create', 'testadmin', { role: 'admin', password: 'test-admin-password' }, accountFile)
+  env.AUTH_FILE = accountFile
   const probe = net.createServer()
   probe.listen(0, '127.0.0.1')
   await once(probe, 'listening')
@@ -116,7 +120,11 @@ async function startServer(env) {
       child.once('error', error => { clearTimeout(timer); reject(error) })
     })
   } catch (error) { child.kill(); throw error }
-  return { url: `http://127.0.0.1:${port}`, async close() { const exited = once(child, 'exit'); child.kill(); if (child.exitCode === null) await exited } }
+  const url = `http://127.0.0.1:${port}`
+  const response = await fetch(`${url}/api/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'testadmin', password: 'test-admin-password' }) })
+  assert.equal(response.status, 200)
+  const headers = { Cookie: response.headers.get('set-cookie').split(';')[0], 'Content-Type': 'application/json' }
+  return { url, headers, async close() { const exited = once(child, 'exit'); child.kill(); if (child.exitCode === null) await exited } }
 }
 test('HTTP live queries execute binaries, reject all writes and never create local demo storage', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'sge-live-test-'))
@@ -129,7 +137,8 @@ test('HTTP live queries execute binaries, reject all writes and never create loc
     for (const command of ['qstat', 'qhost', 'qconf']) await writeFile(path.join(binaries, command), script, { mode: 0o755 })
     const storage = path.join(directory, 'unused', 'data.json')
     server = await startServer({ GRIDENGINE_MODE: 'live', SGE_BIN_DIR: binaries, DATA_FILE: storage })
-    const stateResponse = await fetch(`${server.url}/api/state`)
+    assert.equal((await fetch(`${server.url}/api/state`)).status, 401)
+    const stateResponse = await fetch(`${server.url}/api/state`, { headers: server.headers })
     assert.equal(stateResponse.status, 200)
     const state = await stateResponse.json()
     assert.equal(state.mode, 'live')
@@ -137,15 +146,15 @@ test('HTTP live queries execute binaries, reject all writes and never create loc
     assert.equal(state.hostGroups.length, 2)
     for (const endpoint of ['jobs', 'nodes', 'queues', 'clusters', 'users', 'hostGroups', 'userManagers', 'userOperators', 'userLists', 'unknown']) {
       for (const method of ['POST', 'PATCH', 'PUT', 'DELETE']) {
-        const response = await fetch(`${server.url}/api/${endpoint}${method === 'POST' ? '' : '/test'}`, { method })
+        const response = await fetch(`${server.url}/api/${endpoint}${method === 'POST' ? '' : '/test'}`, { method, headers: server.headers })
         assert.equal(response.status, 405)
         assert.equal((await response.json()).readOnly, true)
       }
     }
-    const cachedResponse = await fetch(`${server.url}/api/state`)
+    const cachedResponse = await fetch(`${server.url}/api/state`, { headers: server.headers })
     assert.equal(cachedResponse.status, 200)
     assert.equal((await readFile(log, 'utf8')).trim().split('\n').length, 11)
-    await assert.rejects(stat(path.dirname(storage)), { code: 'ENOENT' })
+    await assert.rejects(stat(storage), { code: 'ENOENT' })
   } finally { await server?.close(); await rm(directory, { recursive: true, force: true }) }
 })
 test('HTTP missing SGE binaries returns 502 with live metadata instead of demo fallback', async () => {
@@ -155,7 +164,7 @@ test('HTTP missing SGE binaries returns 502 with live metadata instead of demo f
     const storage = path.join(directory, 'data.json')
     await writeFile(storage, 'not valid JSON')
     server = await startServer({ GRIDENGINE_MODE: 'live', SGE_BIN_DIR: path.join(directory, 'missing'), DATA_FILE: storage })
-    const response = await fetch(`${server.url}/api/state`)
+    const response = await fetch(`${server.url}/api/state`, { headers: server.headers })
     assert.equal(response.status, 502)
     const result = await response.json()
     assert.equal(result.mode, 'live')
@@ -171,11 +180,11 @@ test('demo mode remains writable and persists its state', async () => {
   try {
     const storage = path.join(directory, 'data.json')
     server = await startServer({ GRIDENGINE_MODE: 'demo', DATA_FILE: storage })
-    const state = await (await fetch(`${server.url}/api/state`)).json()
+    const state = await (await fetch(`${server.url}/api/state`, { headers: server.headers })).json()
     assert.equal(state.mode, 'demo')
     assert.equal(state.readOnly, false)
     assert.equal(state.jobs.length, 156)
-    const response = await fetch(`${server.url}/api/queues`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: 'live-regression.q', cluster: 'production', slots: 8, type: 'test', priority: 0 }) })
+    const response = await fetch(`${server.url}/api/queues`, { method: 'POST', headers: server.headers, body: JSON.stringify({ name: 'live-regression.q', cluster: 'production', slots: 8, type: 'test', priority: 0 }) })
     assert.equal(response.status, 201)
     assert.ok(JSON.parse(await readFile(storage, 'utf8')).queues.some(item => item.name === 'live-regression.q'))
   } finally { await server?.close(); await rm(directory, { recursive: true, force: true }) }

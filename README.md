@@ -8,6 +8,7 @@
 
 ```sh
 pnpm install
+pnpm admin:users create admin --role admin
 pnpm dev:demo
 ```
 
@@ -22,12 +23,41 @@ pnpm start:demo
 
 `dev:demo` / `dev:live`、`start:demo` / `start:live` 分别选择后端模式；`build:demo` / `build:live` 使用对应的 Vite mode 加载构建配置。未区分模式的 `dev`、`start`、`build` 命令仍保留，其中后端默认使用 demo 模式。
 
+## 登录与账号管理
+
+首次启动前执行 `pnpm admin:users create admin --role admin`，在终端交互输入并确认密码（输入不回显）。无默认账号或默认密码，密码长度为 12–128 个字符；账号以字母开头，长度 2–40，仅支持字母、数字、下划线和连字符。未初始化账号时，页面可打开，但不能登录或访问集群数据。
+
+本机管理员通过以下脚本增删查改**控制台登录账号**：
+
+```sh
+pnpm admin:users create alice
+pnpm admin:users list
+pnpm admin:users get alice
+pnpm admin:users update alice --reset-password
+pnpm admin:users update alice --role admin
+pnpm admin:users update alice --disabled true
+pnpm admin:users update alice --disabled false
+pnpm admin:users delete alice
+```
+
+`create` 默认创建 `user` 角色，交互设置密码；`update --reset-password` 交互重置密码。自动化可用 `--password-stdin` 从标准输入读取密码（末尾一个换行符会被移除），通过受控秘密管理工具提供输入，不要将密码放进命令行参数、仓库或 shell 历史。查询输出不含密码哈希。不能删除、停用或降级最后一个启用的管理员。
+
+- `admin`：可读取状态和执行 demo 写操作；live 中仍只读。
+- `user`：仅查看、查询和导出，不可修改集群资源；服务端和页面均限制写入。
+- 登录账号独立于页面的集群用户，不创建或修改操作系统 / SGE 用户。原有集群用户的 `role` 不授予控制台权限。
+
+账号默认存放在项目 `private/auth.json`（已忽略提交，文件权限 `0600`），可通过 `AUTH_FILE=/absolute/path/auth.json` 指定。脚本和后端必须使用相同的 `AUTH_FILE`，建议用同一个服务系统账号运行。脚本属于本机运维工具，不通过 Web 接口开放；有账号文件写权限的系统用户可以管理登录账号，须限制目录访问并备份账号文件。并发写入通过锁目录互斥、临时文件原子替换；若写进程异常退出，只能在确认无写进程后清理对应的 `.lock` 目录。
+
+密码使用随机盐的 scrypt 哈希。会话 Cookie 为 HttpOnly、SameSite=Strict，最长 8 小时，退出立即失效；账号更新、密码重置、停用及删除均使该账号旧会话失效。会话仅存于单个后端进程内，重启后需要重新登录，不支持多副本共享会话。每个源 IP 在 15 分钟内最多连续尝试登录 10 次；成功后清除计数。默认不信任代理转发的客户端 IP，反向代理后限流可能按代理 IP 共享。
+
+生产环境必须通过 HTTPS 提供服务，并设置 `COOKIE_SECURE=true` 以启用 Secure 和 `__Host-` Cookie。开发 HTTP 环境不要开启该选项。写请求要求 `Content-Type: application/json`，拒绝浏览器明确标记的跨站请求，不开放 CORS。仍建议部署在受信任网络，限制反向代理请求大小与频率。
+
 ## Demo 与 Live
 
 `GRIDENGINE_MODE` 支持 `demo`（默认）和 `live`，其他值会在启动时报错。切换模式后须重启后端。
 
 - `demo`：使用本地演示数据，保留原有创建、修改和删除功能。
-- `live`：从当前 SGE 环境读取真实状态，不读写 `DATA_FILE`，不初始化演示数据。所有 API 写请求均返回 `405`，前端同步禁用写操作；命令失败返回 `502`，不会回退到演示数据。
+- `live`：从当前 SGE 环境读取真实状态，不读写 `DATA_FILE`，不初始化演示数据。认证后的管理员资源写请求返回 `405`，普通账号写请求返回 `403`，前端同步禁用写操作；登录和退出不受只读限制。命令失败返回 `502`，不会回退到演示数据。
 
 先将后端部署在能访问集群的 SGE 提交主机或管理主机上，以拥有查询权限的普通系统账户运行。加载该集群的环境，例如：
 
@@ -86,12 +116,15 @@ pnpm dev:live
 
 队列组按 SGE host group 建模，使用 `hosts` 保存节点 ID、`queueIds` 保存关联队列 ID；队列关联表示演示环境中的队列 `hostlist` 主机组引用，不执行 `qconf`。当前不支持嵌套主机组。已有数据文件会兼容加载，默认队列组为空，不修改原有资源。
 
-角色字段仅展示用户资料，未实现认证或服务端 RBAC。两种模式都不应直接暴露到公网；只读状态仍包含集群资源和作业信息。应部署在受信任网络或有认证的反向代理后，不要使用 root 运行。未来开放真实写操作前，还需登录认证、服务端权限校验、审计持久化和受控写命令适配器。demo 中的集群启停与节点上下线仅修改演示状态，不代表操作系统关机。
+集群用户的角色字段仅展示用户资料；控制台登录认证与服务端权限使用独立账号库。登录后可查看全部集群和作业信息，暂不支持按用户或集群隔离数据。两种模式仍建议部署在受信任网络，不要使用 root 运行。未来开放真实写操作前，还需审计持久化和受控写命令适配器。demo 中的集群启停与节点上下线仅修改演示状态，不代表操作系统关机。
 
 ## API
 
 | 方法 | 路径 | 用途 |
 | --- | --- | --- |
+| POST | `/api/auth/login` | 账号密码登录：`username`、`password`；设置会话 Cookie |
+| GET | `/api/auth/me` | 当前登录账号，不含密码信息 |
+| POST | `/api/auth/logout` | 退出并撤销会话 |
 | GET | `/api/state` | 集群、节点、队列、用户、作业与事件 |
 | POST | `/api/:resource` | 创建资源 |
 | PATCH | `/api/:resource/:id` | 修改状态 |
@@ -100,7 +133,7 @@ pnpm dev:live
 | PATCH | `/api/hostGroups/:id` | 完整更新队列组配置 |
 | DELETE | `/api/hostGroups/:id` | 删除已解除队列关联的队列组 |
 
-`resource` 为 `clusters`、`nodes`、`queues`、`users` 或 `jobs`。作业终止使用 PATCH，状态为 `deleted`；历史记录保留。接口使用 Zod 校验，错误以 JSON 返回。
+除登录和退出外，所有 API 均需会话 Cookie，未登录返回 `401`；资源写操作另需 `admin` 角色，否则返回 `403`。`resource` 为 `clusters`、`nodes`、`queues`、`users` 或 `jobs`。作业终止使用 PATCH，状态为 `deleted`；历史记录保留。接口使用 Zod 校验，错误以 JSON 返回。
 
 上述写接口仅在 demo 中可用。`GET /api/state` 返回 `mode` 和 `readOnly` 字段；live 另返回 `fetchedAt`，表示命令快照生成时间。live 查询失败的响应也包含模式及只读标识。
 
@@ -112,7 +145,7 @@ pnpm build
 pnpm test
 ```
 
-`pnpm test` 不需要 SGE 或浏览器，覆盖 XML/配置解析、子进程命令调用、缓存、错误处理、live 写保护、文件隔离和 demo 持久化回归。集成测试使用临时命令样例和临时数据目录，不修改实际集群或本地数据。
+`pnpm test` 不需要 SGE 或浏览器，覆盖账号脚本 CRUD、密码哈希、会话与权限、会话撤销、登录限流、请求格式保护、XML/配置解析、子进程命令调用、缓存、错误处理、live 写保护、文件隔离和 demo 持久化回归。集成测试使用临时账号、命令样例和数据目录，不修改实际集群或本地数据。
 
 浏览器冒烟测试使用 demo：
 

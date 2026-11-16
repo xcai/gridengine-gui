@@ -4,6 +4,7 @@ import { readFile, writeFile, mkdir } from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { createLiveAdapter } from './live.js'
+import { createAuth } from './auth.js'
 
 const directory = path.dirname(fileURLToPath(import.meta.url))
 const storage = process.env.DATA_FILE || path.join(directory, 'data.json')
@@ -11,11 +12,12 @@ const mode = process.env.GRIDENGINE_MODE || 'demo'
 if (!['demo', 'live'].includes(mode)) throw new Error('GRIDENGINE_MODE must be demo or live')
 const live = mode === 'live' ? createLiveAdapter() : null
 const app = express()
+app.use(express.json({ limit: '100kb' }))
+app.use('/api', createAuth())
 app.use('/api', (request, response, next) => {
   if (live && !['GET', 'HEAD'].includes(request.method)) return response.set('Allow', 'GET, HEAD').status(405).json({ error: 'live 模式为只读，不允许修改集群', mode, readOnly: true })
   next()
 })
-app.use(express.json({ limit: '100kb' }))
 
 const initialData = () => ({
   clusters: [

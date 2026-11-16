@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Layers3, LoaderCircle, Pencil, Plus, Save, Search, Trash2, X } from 'lucide-react'
 import './QueueGroups.css'
+import fetch from './api.js'
 
 export default function QueueGroups({ data, cluster, onSaved, notify }) {
   const readOnly = data.mode === 'live' || data.readOnly

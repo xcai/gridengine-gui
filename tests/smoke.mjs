@@ -5,15 +5,20 @@ import { mkdtemp, rm, readFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { chromium } from '@playwright/test'
+import { changeAccount } from '../server/auth.js'
 
 const directory = await mkdtemp(path.join(tmpdir(), 'gridengine-test-'))
 const port = process.env.TEST_API_PORT || '3109'
 const api = `http://127.0.0.1:${port}`
 const base = process.env.TEST_BASE_URL || 'http://127.0.0.1:5174'
-const server = spawn(process.execPath, ['server/index.js'], { env: { ...process.env, GRIDENGINE_MODE: 'demo', API_PORT: port, DATA_FILE: path.join(directory, 'state.json') }, stdio: ['ignore', 'pipe', 'pipe'] })
+const accountFile = path.join(directory, 'auth.json')
+await changeAccount('create', 'testadmin', { role: 'admin', password: 'smoke-admin-password' }, accountFile)
+const server = spawn(process.execPath, ['server/index.js'], { env: { ...process.env, GRIDENGINE_MODE: 'demo', API_PORT: port, DATA_FILE: path.join(directory, 'state.json'), AUTH_FILE: accountFile }, stdio: ['ignore', 'pipe', 'pipe'] })
 let browser
+let cookie = ''
 const request = async (endpoint, method = 'GET', body) => {
-  const response = await fetch(`${api}/api/${endpoint}`, { method, headers: { 'Content-Type': 'application/json' }, ...(body ? { body: JSON.stringify(body) } : {}) })
+  const response = await fetch(`${api}/api/${endpoint}`, { method, headers: { 'Content-Type': 'application/json', Cookie: cookie }, ...(body ? { body: JSON.stringify(body) } : {}) })
+  if (response.headers.get('set-cookie')) cookie = response.headers.get('set-cookie').split(';')[0]
   return { status: response.status, data: await response.json() }
 }
 try {
@@ -22,6 +27,8 @@ try {
     once(server, 'exit').then(([code]) => { throw new Error(`Test API exited: ${code}`) }),
     new Promise((_, reject) => server.once('error', reject)),
   ])
+  assert.equal((await request('state')).status, 401)
+  assert.equal((await request('auth/login', 'POST', { username: 'testadmin', password: 'smoke-admin-password' })).status, 200)
   const initial = await request('state')
   assert.equal(initial.status, 200)
   assert.equal(initial.data.nodes.length, 24)
@@ -79,6 +86,21 @@ try {
     await route.fulfill({ response })
   })
   await page.goto(base)
+  await page.getByRole('heading', { name: '登录控制台' }).waitFor()
+  for (const width of [1440, 390, 360]) {
+    await page.setViewportSize({ width, height: 900 })
+    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+    await page.screenshot({ path: `/tmp/gridengine-login-${width}.png`, fullPage: true })
+  }
+  await page.setViewportSize({ width: 1440, height: 1100 })
+  await page.getByLabel('账号', { exact: true }).fill('testadmin')
+  await page.getByLabel('密码', { exact: true }).fill('wrong-password')
+  await page.getByRole('button', { name: '登录', exact: true }).click()
+  await page.getByRole('alert').getByText('账号或密码错误').waitFor()
+  await page.getByLabel('密码', { exact: true }).fill('smoke-admin-password')
+  await page.getByRole('button', { name: '登录', exact: true }).click()
+  await page.getByText('最近作业', { exact: true }).waitFor()
+  await page.reload()
   await page.getByText('最近作业', { exact: true }).waitFor()
   await page.locator('.recharts-area').first().waitFor()
   assert.equal(await page.locator('.node-tile').count(), 24)
@@ -176,9 +198,25 @@ try {
   assert.equal(await page.locator('.sidebar.mobile-open').count(), 0)
   await page.getByRole('heading', { name: '节点管理', exact: true }).first().waitFor()
   assert.deepEqual(pageErrors, [])
-  const proxy = await fetch(`${base}/api/state`)
-  assert.equal(proxy.status, 200, 'Development API proxy must be reachable')
+  const proxy = await fetch(`${base}/api/auth/me`)
+  assert.equal(proxy.status, 401, 'Development API proxy must require authentication')
   console.log('PASS filters, CSV download, desktop/mobile layout, mobile navigation and API proxy')
+  await page.setViewportSize({ width: 1440, height: 1100 })
+  await page.getByRole('button', { name: '退出登录', exact: true }).click()
+  await page.getByRole('heading', { name: '登录控制台' }).waitFor()
+  await page.reload()
+  await page.getByRole('heading', { name: '登录控制台' }).waitFor()
+  await changeAccount('create', 'reader', { password: 'smoke-reader-password' }, accountFile)
+  await page.getByLabel('账号', { exact: true }).fill('reader')
+  await page.getByLabel('密码', { exact: true }).fill('smoke-reader-password')
+  await page.getByRole('button', { name: '登录', exact: true }).click()
+  await page.getByText('最近作业', { exact: true }).waitFor()
+  assert.equal(await page.getByRole('button', { name: '提交作业', exact: true }).isDisabled(), true)
+  await changeAccount('update', 'reader', { disabled: true }, accountFile)
+  await page.getByRole('button', { name: '刷新数据', exact: true }).click()
+  await page.getByRole('heading', { name: '登录控制台' }).waitFor()
+  assert.deepEqual(pageErrors, [])
+  console.log('PASS login errors, session restore, logout, read-only account and session revocation')
   console.log('All smoke tests passed. Screenshots: /tmp/gridengine-{desktop,mobile}.png')
 } finally {
   await browser?.close()

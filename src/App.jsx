@@ -1,8 +1,10 @@
 import { useEffect, useEffectEvent, useState } from 'react'
-import { Activity, ArrowDownToLine, ArrowRight, ArrowUpRight, Bell, Boxes, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Clock3, Cpu, Database, Ellipsis, ExternalLink, FileCode2, FolderKanban, Layers3, LayoutDashboard, ListFilter, LoaderCircle, Menu, MoreHorizontal, Network, Pause, Play, Plus, RefreshCw, Search, Server, Settings2, ShieldCheck, Terminal, Trash2, Users, Workflow, X, XCircle } from 'lucide-react'
+import { Activity, ArrowDownToLine, ArrowRight, ArrowUpRight, Bell, Boxes, CheckCheck, CheckCircle2, ChevronDown, ChevronLeft, ChevronRight, CircleHelp, Clock3, Cpu, Database, ExternalLink, FileCode2, FolderKanban, Layers3, LayoutDashboard, ListFilter, LoaderCircle, Menu, MoreHorizontal, Network, Pause, Play, Plus, RefreshCw, Search, Server, Settings2, ShieldCheck, Terminal, Trash2, Users, Workflow, X, XCircle } from 'lucide-react'
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import './App.css'
 import QueueGroups from './QueueGroups'
+import fetch from './api.js'
+import { LogOut } from 'lucide-react'
 
 const navigation = [
   { section: '工作空间', items: [{ id: 'overview', name: '集群概览', icon: LayoutDashboard }, { id: 'jobs', name: '作业管理', icon: FolderKanban }, { id: 'queues', name: '队列管理', icon: Layers3 }] },
@@ -21,7 +23,7 @@ function Badge({ status }) { return <span className={`badge ${status}`}><i />{st
 function IconButton({ icon: Icon, label, onClick, className = '', ...props }) { return <button type="button" className={`icon-button ${className}`} title={label} aria-label={label} onClick={onClick} {...props}><Icon size={17} /></button> }
 function PanelHeader({ title, note, action, onAction }) { return <div className="panel-heading"><div><h2>{title}</h2>{note && <span className="panel-note">{note}</span>}</div>{action && <button className="text-button" onClick={onAction}>{action}<ChevronRight size={14} /></button>}</div> }
 
-export default function App() {
+export default function App({ account, onLogout }) {
   const [data, setData] = useState(null)
   const [view, setView] = useState('overview')
   const [cluster, setCluster] = useState('all')
@@ -44,7 +46,7 @@ export default function App() {
   const [queueTab, setQueueTab] = useState('queues')
   const [userTab, setUserTab] = useState('userManagers')
   const [mode, setMode] = useState(null)
-  const readOnly = mode !== 'demo'
+  const readOnly = mode !== 'demo' || account.role !== 'admin'
   const environmentLabel = mode === 'live' ? 'LIVE · 只读' : mode === 'demo' ? '演示环境' : '未连接'
 
   const notify = (message, type = 'success') => setToast({ message, type })
@@ -54,7 +56,7 @@ export default function App() {
       const result = await response.json()
       setMode(result.mode || null)
       if (!response.ok) throw new Error(result.error || '暂时无法连接 API 服务')
-      setData(result); setLastUpdated(new Date()); setError('')
+      setData({ ...result, readOnly: result.readOnly || account.role !== 'admin' }); setLastUpdated(new Date()); setError('')
       if (manual) notify('数据已更新')
     } catch (failure) { setError(failure.message) } finally { setLoading(false) }
   }
@@ -165,7 +167,7 @@ export default function App() {
   }
 
   function renderManagement() {
-    if (view === 'users' && readOnly) return renderLiveUsers()
+    if (view === 'users' && mode === 'live') return renderLiveUsers()
     const columns = { nodes: ['节点名称', '所属集群', '状态', 'CPU 使用率', '内存使用率', '配置', 'IP 地址'], queues: ['队列名称', '所属集群', '状态', '槽位使用', '队列类型', '优先级'], clusters: ['集群名称', '主控节点', '状态', '节点数量', 'Grid Engine 版本', '描述'], users: ['用户', '邮箱', '状态', '角色', '部门'] }[view]
     return <section className="panel management-panel">
       <PanelHeader title={readOnly && view === 'users' ? '作业用户' : labels[view]} note={<span className="count-pill">{scoped(view).length}</span>} />
@@ -188,7 +190,7 @@ export default function App() {
       <a className="brand" href="#" onClick={event => { event.preventDefault(); navigate('overview') }}><span className="brand-mark"><Boxes size={25} strokeWidth={1.7} /></span><span>Grid<span className="brand-light">Engine</span><small>COMPUTE MANAGEMENT</small></span></a>
       <button className="workspace-switch" onClick={() => navigate('clusters')}><span className="workspace-icon"><Workflow size={19} /></span><span><strong>计算资源控制台</strong><small>Grid Engine Platform</small></span><ChevronDown size={14} /></button>
       <nav>{navigation.map(group => <div className="nav-group" key={group.section}><div className="nav-label">{group.section}</div>{group.items.map(({ id, name, icon: Icon }) => <button key={id} className={`nav-item ${view === id ? 'selected' : ''}`} onClick={() => navigate(id)}><Icon size={18} strokeWidth={1.7} /><span>{name}</span>{id === 'jobs' && <span className="nav-count">{data ? running : '—'}</span>}{id === 'events' && data?.events.some(event => event.type === 'error') && <i className="nav-dot" />}</button>)}</div>)}</nav>
-      <div className="sidebar-bottom"><div className="engine-health"><span className="live-dot" /><span>{error ? '连接异常' : data ? environmentLabel : '等待连接'}</span><span className="mono">{data?.clusters[0]?.version || '-'}</span></div><button className="help-link" onClick={() => setModal({ kind: 'help', title: '关于 GridEngine' })}><CircleHelp size={17} />帮助与文档<ArrowUpRight size={14} /></button><button className="profile" disabled={readOnly} onClick={() => detail('users', data?.users.find(user => user.id === 'admin') || { name: 'admin', role: 'admin', email: 'admin@gridengine.local' })}><span className="avatar">{readOnly ? 'R' : 'A'}</span><span><strong>{readOnly ? 'Read Only' : 'Administrator'}</strong><small>{readOnly ? '只读访问' : '超级管理员'}</small></span><Ellipsis size={18} /></button></div>
+      <div className="sidebar-bottom"><div className="engine-health"><span className="live-dot" /><span>{error ? '连接异常' : data ? environmentLabel : '等待连接'}</span><span className="mono">{data?.clusters[0]?.version || '-'}</span></div><button className="help-link" onClick={() => setModal({ kind: 'help', title: '关于 GridEngine' })}><CircleHelp size={17} />帮助与文档<ArrowUpRight size={14} /></button><div className="profile"><span className="avatar">{account.username[0].toUpperCase()}</span><span style={{ minWidth: 0, overflowWrap: 'anywhere' }}><strong>{account.username}</strong><small>{roleNames[account.role]}</small></span><IconButton icon={LogOut} label="退出登录" onClick={onLogout} /></div></div>
     </aside>
     <div className="main-shell"><header className="topbar"><div className="breadcrumb"><IconButton icon={Menu} label="打开菜单" className="mobile-toggle" onClick={() => setMobileMenu(true)} /><span>工作空间</span><ChevronRight size={13} /><strong>{labels[view]}</strong></div><div className="topbar-actions"><form className="search global-search" onSubmit={event => { event.preventDefault(); navigate('jobs'); setQuery(globalQuery) }}><Search size={16} /><input placeholder="搜索作业、用户..." aria-label="全局搜索" value={globalQuery} onChange={event => setGlobalQuery(event.target.value)} /><kbd>↵</kbd></form><span className="environment"><span />{environmentLabel}</span><div className="notification-wrap"><IconButton icon={Bell} label="通知" onClick={() => setNotifications(!notifications)} />{!readNotifications && !readOnly && <i className="notification-dot" />}{notifications && <div className="notification-popover"><div className="panel-heading"><h2>通知中心</h2><IconButton icon={CheckCheck} label="标记全部已读" onClick={() => setReadNotifications(true)} /></div>{readNotifications ? <div className="empty-state"><CheckCircle2 size={25} /><p>所有通知已读</p></div> : data?.events.slice(0, 3).map(event => <button className="notification-item" key={event.id} onClick={() => { navigate('events'); setNotifications(false) }}><span className={`event-icon ${event.type}`}><Activity size={15} /></span><span><strong>{event.title}</strong><small>{event.time}</small></span></button>)}</div>}</div><div className="top-divider" /><span className="top-avatar">{readOnly ? 'R' : 'A'}</span></div></header>
     <main><div className="page-heading"><div><div className="eyebrow">COMPUTE WORKSPACE</div><h1>{labels[view]}{view === 'overview' && <span className="live-label"><i />{mode === 'live' ? '只读监控' : '实时监控'}</span>}</h1><p>{descriptions[view]}</p></div><div className="page-actions">{view === 'overview' ? <><button className="button export-button" onClick={() => exportRows(jobs, 'cluster-report')}><ArrowDownToLine size={15} />导出报表</button><button className="button primary" disabled={readOnly} onClick={() => openCreate('jobs')}><Plus size={17} />提交作业</button></> : ['jobs', 'nodes', 'queues', 'clusters', 'users'].includes(view) && !(view === 'users' && readOnly) && <button className="button primary" disabled={readOnly} onClick={() => openCreate(view)}><Plus size={17} />{{ jobs: '提交作业', nodes: '添加节点', queues: '创建队列', clusters: '创建集群', users: '添加用户' }[view]}</button>}</div></div>

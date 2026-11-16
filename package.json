@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "admin:users": "node server/users.js",
     "dev": "concurrently -k -n api,web \"node --watch server/index.js\" \"vite --host 0.0.0.0\"",
     "dev:demo": "GRIDENGINE_MODE=demo concurrently -k -n api,web \"node --watch server/index.js\" \"vite --host 0.0.0.0\"",
     "dev:live": "GRIDENGINE_MODE=live concurrently -k -n api,web \"node --watch server/index.js\" \"vite --host 0.0.0.0\"",
