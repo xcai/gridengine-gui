@@ -1,6 +1,14 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=Noto+Sans+SC:wght@400;450;500;550;600;650;700&display=swap');
 .setting-select{border:1px solid #e6eae7;border-radius:5px;background:#fff;color:#5d6e63;padding:7px 10px;font:inherit;font-size:11px}
-html th{font-size:12px}
+html th{font-size:13px}
+table td{font-size:11px}
+table td .id-link,table td .job-name,table td .user-cell{font-size:11px}
+table td .resource-name{font-size:12px}
+table td .queue-tag,table td .role-tag{font-size:10px}
+table td .badge,table td .tiny-avatar{font-size:9px}
+.brand .console-version{font-size:10px;letter-spacing:0}
+.breadcrumb .mobile-console-version{display:none}
+@media(max-width:600px){.breadcrumb .mobile-console-version{display:inline;white-space:nowrap}.breadcrumb .breadcrumb-root{display:none}}
 
 :root{font-family:'DM Sans','Noto Sans SC',sans-serif;color:#28352f;background:#f6f8fa;font-synthesis:none;text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;font-size:13px;font-weight:400;line-height:1.5;letter-spacing:0;--green:#218567;--green-dark:#176b53;--muted:#8a929b;--border:#e9edf0;--text:#2c3633}
 *{box-sizing:border-box}body{margin:0;min-width:360px}button,input,select,textarea{font:inherit;letter-spacing:0}button,a,input,select,textarea{-webkit-tap-highlight-color:transparent}button{cursor:pointer;color:inherit;background:none;border:0}button:disabled{cursor:not-allowed;opacity:.4}a{color:inherit;text-decoration:none}button:focus-visible,a:focus-visible{outline:2px solid #2d9d7e;outline-offset:3px}input:focus,select:focus,textarea:focus{outline:2px solid #b7dace;outline-offset:1px}h1,h2,h3,p{margin:0}button svg{flex-shrink:0}input[type=checkbox]{accent-color:#218567;width:13px;height:13px;cursor:pointer;margin:0;vertical-align:middle}::selection{background:#d7eee4}.mono{font-family:'DM Sans',ui-monospace,monospace;font-variant-numeric:tabular-nums}.muted{color:#8a929b}button,select{transition:background .16s,color .16s,border-color .16s}input::placeholder,textarea::placeholder{color:#a1a7b0}::-webkit-scrollbar{width:5px;height:5px}::-webkit-scrollbar-thumb{background:#d4dcd8;border-radius:4px}
