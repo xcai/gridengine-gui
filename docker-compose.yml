@@ -52,8 +52,13 @@ services:
       args:
         BUILD_MODE: ${GRIDENGINE_MODE:-demo}
     restart: unless-stopped
+    environment:
+      NGINX_WORKER_PROCESSES: ${NGINX_WORKER_PROCESSES:-2}
+    command: >-
+      sh -c 'sed -i "s/^worker_processes .*/worker_processes $${NGINX_WORKER_PROCESSES};/" /etc/nginx/nginx.conf
+      && exec nginx -g "daemon off;"'
     ports:
-      - "127.0.0.1:${WEB_PORT:-8080}:80"
+      - "${WEB_IP:-0.0.0.0}:${WEB_PORT:-8080}:80"
     depends_on:
       api:
         condition: service_healthy

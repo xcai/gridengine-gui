@@ -33,7 +33,7 @@ pnpm start:demo
 cp .env.example .env
 ```
 
-模板包含 `GRIDENGINE_MODE`、`DEV_PORT`、`WEB_PORT` 和 `COOKIE_SECURE`，默认值与 Compose 配置一致。`.env` 已忽略提交；命令行环境变量优先于 `.env` 中的值。
+模板包含 `GRIDENGINE_MODE`、`DEV_PORT`、`WEB_PORT`、`NGINX_WORKER_PROCESSES` 和 `COOKIE_SECURE`，默认值与 Compose 配置一致。`NGINX_WORKER_PROCESSES` 可设为 `auto` 或正整数，用于配置 Nginx worker 进程数。`.env` 已忽略提交；命令行环境变量优先于 `.env` 中的值。
 
 ### 开发环境
 
