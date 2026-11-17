@@ -1,5 +1,6 @@
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
+import { createInterface } from 'node:readline'
 import path from 'node:path'
 import { XMLParser, XMLValidator } from 'fast-xml-parser'
 
@@ -126,6 +127,30 @@ export function createLiveAdapter(env = process.env, runCommand) {
       throw failure(`${command} 查询失败（${error.killed ? '超时' : error.code || '执行错误'}），请检查 SGE 环境与查询权限`)
     }
   }
+  async function readJobHistory() {
+    if (runCommand) return parseAccounting(await run('qacct', ['-j']), cluster)
+    return new Promise((resolve, reject) => {
+      const executable = env.SGE_BIN_DIR ? path.join(env.SGE_BIN_DIR, 'qacct') : 'qacct'
+      const child = spawn(executable, ['-j'], { timeout, shell: false, env: { ...env, LC_ALL: 'C', LANG: 'C' }, stdio: ['ignore', 'pipe', 'ignore'] })
+      const lines = createInterface({ input: child.stdout, crlfDelay: Infinity })
+      const jobs = []
+      let block = '', blockBytes = 0, errorMessage = ''
+      const appendBlock = () => { jobs.push(...parseAccounting(block, cluster)); block = ''; blockBytes = 0 }
+      lines.on('line', line => {
+        if (errorMessage) return
+        if (/^={3,}\s*$/.test(line)) return appendBlock()
+        blockBytes += Buffer.byteLength(line) + 1
+        if (blockBytes > 1024 * 1024) { errorMessage = '单条 accounting 记录超过 1 MiB'; child.kill(); return }
+        block += `${line}\n`
+      })
+      child.on('error', error => { errorMessage = error.code || '执行错误' })
+      child.on('close', (code, signal) => {
+        if (errorMessage || code !== 0) return reject(failure(`qacct 查询失败（${errorMessage || (child.killed ? '超时' : signal || `退出码 ${code}`)}），请检查 SGE 环境与查询权限`))
+        appendBlock()
+        resolve(jobs)
+      })
+    })
+  }
   function names(output, kind) {
     const values = tokens(output)
     const pattern = kind === 'group' ? /^@[a-zA-Z0-9_][a-zA-Z0-9_.-]*$/ : /^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$/
@@ -160,7 +185,7 @@ export function createLiveAdapter(env = process.env, runCommand) {
   }
   return {
     async getJobHistory() {
-      return parseAccounting(await run('qacct', ['-j']), cluster)
+      return readJobHistory()
     },
     async getJobDetail(jobId) {
       if (!/^[0-9]+$/.test(jobId)) throw Object.assign(new Error('无效作业 ID'), { status: 400 })

@@ -41,6 +41,29 @@ test('parse accounting records including array tasks and failed jobs', async () 
   assert.equal(unknown.status, 'unknown')
   assert.equal(unknown.ended, null)
 })
+test('stream accounting output larger than the command buffer without truncation', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'sge-accounting-test-'))
+  try {
+    const script = `#!${process.execPath}\nconst record = '==============================================================\\njobnumber 42\\njobname train\\nfailed 0\\nexit_status 0\\nextra ' + 'x'.repeat(1024) + '\\n'; for (let index = 0; index < 9000; index++) process.stdout.write(record);\n`
+    await writeFile(path.join(directory, 'qacct'), script, { mode: 0o755 })
+    const jobs = await createLiveAdapter({ SGE_BIN_DIR: directory }).getJobHistory()
+    assert.equal(jobs.length, 9000)
+    assert.equal(jobs[8999].id, '42')
+    assert.equal(jobs[8999].status, 'completed')
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+test('streamed accounting failures do not return partial results', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'sge-accounting-failure-'))
+  try {
+    const executable = path.join(directory, 'qacct')
+    await writeFile(executable, `#!${process.execPath}\nprocess.stdout.write('jobnumber 42\\n'); process.exitCode = 3;\n`, { mode: 0o755 })
+    await assert.rejects(createLiveAdapter({ SGE_BIN_DIR: directory }).getJobHistory(), /退出码 3/)
+    await writeFile(executable, `#!${process.execPath}\nprocess.stdout.write('extra ' + 'x'.repeat(1024 * 1024) + '\\n');\n`, { mode: 0o755 })
+    await assert.rejects(createLiveAdapter({ SGE_BIN_DIR: directory }).getJobHistory(), /单条 accounting 记录超过 1 MiB/)
+    await writeFile(executable, `#!${process.execPath}\nsetInterval(() => {}, 1000);\n`, { mode: 0o755 })
+    await assert.rejects(createLiveAdapter({ SGE_BIN_DIR: directory, SGE_COMMAND_TIMEOUT_MS: '100' }).getJobHistory(), /超时/)
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
 test('parse SGE XML, array tasks, held jobs and missing metrics without invented CPU data', () => {
   const jobs = parseJobs(jobsXml, 'sge')
   assert.equal(jobs[0].id, '42.1')

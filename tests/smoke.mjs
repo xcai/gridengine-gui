@@ -156,13 +156,20 @@ try {
     { id: '1', name: 'old_job', user: 'alice', cluster: 'production', status: 'completed', ended: '2025-01-01T12:00:00', queue: 'all.q' },
     { id: '2', name: 'new_job', user: 'bob', cluster: 'production', status: 'failed', ended: '2025-01-03T12:00:00', queue: 'all.q' },
     { id: '3', name: 'other_cluster_job', user: 'alice', cluster: 'research', status: 'completed', ended: '2025-01-02T12:00:00', queue: 'short.q' },
+    { id: '4', name: 'outside_job', user: 'alice', cluster: 'production', status: 'completed', ended: '2024-12-30T12:00:00', queue: 'all.q' },
+    { id: '5', name: 'future_job', user: 'alice', cluster: 'production', status: 'completed', ended: '2025-04-01T12:00:00', queue: 'all.q' },
   ]
   let historyFails = false
   const historyRoute = route => route.fulfill(historyFails ? { status: 502, json: { error: 'qacct 查询失败' } } : { json: { jobs: historyJobs } })
   await page.route('**/api/jobs/history', historyRoute)
+  await page.clock.setFixedTime(new Date('2025-03-31T12:00:00'))
   await page.locator('nav').getByRole('button', { name: '作业管理', exact: true }).click()
   await page.getByRole('tab', { name: '历史作业' }).click()
   await page.getByText('new_job', { exact: true }).waitFor()
+  assert.equal(await page.getByLabel('开始日期').inputValue(), '2024-12-31')
+  assert.equal(await page.getByLabel('结束日期').inputValue(), '2025-03-31')
+  assert.equal(await page.getByText('outside_job', { exact: true }).count(), 0)
+  assert.equal(await page.getByText('future_job', { exact: true }).count(), 0)
   assert.deepEqual(await page.locator('tbody tr').allTextContents().then(rows => rows.map(row => row.match(/(?:new|old|other_cluster)_job/)[0])), ['new_job', 'other_cluster_job', 'old_job'])
   await page.getByLabel('开始日期').fill('2025-01-02')
   await page.getByLabel('结束日期').fill('2025-01-02')
@@ -179,6 +186,7 @@ try {
   await page.getByText('全部作业', { exact: true }).waitFor()
   await page.unroute('**/api/jobs/history', historyRoute)
   await page.getByLabel('选择集群').selectOption('all')
+  await page.clock.setFixedTime(new Date())
   await page.setViewportSize({ width: 1440, height: 1100 })
   console.log('PASS historical jobs ordering, dates, cluster, errors and mobile layout')
 

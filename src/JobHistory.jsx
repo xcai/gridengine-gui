@@ -1,12 +1,9 @@
 import { useEffect, useState } from 'react'
 import { ChevronLeft, ChevronRight, Clock3, RefreshCw, Search } from 'lucide-react'
 import fetch from './api.js'
+import { defaultHistoryRange, localDate } from './historyDates.js'
 import './JobHistory.css'
 
-const localDate = value => {
-  const date = new Date(value)
-  return value && !Number.isNaN(date.getTime()) ? `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` : ''
-}
 const dateText = value => localDate(value) ? new Date(value).toLocaleString('zh-CN', { hour12: false }) : '-'
 const timeValue = value => localDate(value) ? new Date(value).getTime() : -Infinity
 const statusNames = { completed: '已完成', failed: '失败', unknown: '未知' }
@@ -16,8 +13,9 @@ export default function JobHistory({ cluster }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [revision, setRevision] = useState(0)
-  const [start, setStart] = useState('')
-  const [end, setEnd] = useState('')
+  const [defaultRange] = useState(defaultHistoryRange)
+  const [start, setStart] = useState(defaultRange.start)
+  const [end, setEnd] = useState(defaultRange.end)
   const [query, setQuery] = useState('')
   const [page, setPage] = useState(1)
 
