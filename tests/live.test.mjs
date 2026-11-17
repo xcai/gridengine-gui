@@ -6,7 +6,7 @@ import { mkdtemp, writeFile, readFile, mkdir, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import net from 'node:net'
-import { createLiveAdapter, parseConfig, parseJobs, parseNodes } from '../server/live.js'
+import { createLiveAdapter, parseAccounting, parseConfig, parseJobs, parseNodes } from '../server/live.js'
 import { changeAccount } from '../server/auth.js'
 
 const jobsXml = '<job_info><queue_info><job_list state="running"><JB_job_number>42</JB_job_number><JB_name>train</JB_name><JB_owner>alice</JB_owner><state>r</state><queue_name>all.q@node1</queue_name><slots>4</slots><tasks>1</tasks></job_list></queue_info><job_info><job_list state="pending"><JB_job_number>43</JB_job_number><JB_name>wait</JB_name><JB_owner>bob</JB_owner><state>hqw</state><slots>1</slots></job_list></job_info></job_info>'
@@ -15,12 +15,32 @@ const queuesXml = '<job_info><queue_info><QueueList><name>all.q@node1</name><slo
 const outputs = new Map([
   ['qstat -xml -u *', jobsXml], ['qhost -xml', hostsXml], ['qstat -f -xml -u *', queuesXml],
   ['qstat -j 42', 'job_number: 42\nscript_file: /home/alice/train.sh\n'],
+  ['qacct -j', '==============================================================\njobnumber 41\njobname finished\nowner alice\nend_time Thu Jan 02 04:05:05 2025\nfailed 0\nexit_status 0\n'],
   ['qconf -sql', 'all.q\n'], ['qconf -shgrpl', '@compute\n@empty\n'],
   ['qconf -sm', 'manager1\nmanager2\n'], ['qconf -so', 'operator1\n'], ['qconf -sul', 'researchers\nvisitors\n'],
   ['qconf -sq all.q', 'qname all.q\nhostlist @compute\npriority 0\nqtype BATCH INTERACTIVE\n'],
   ['qconf -shgrp @compute', 'group_name @compute\nhostlist node1 \\\n node2\n'],
   ['qconf -shgrp @empty', 'group_name @empty\nhostlist NONE\n'],
 ])
+test('parse accounting records including array tasks and failed jobs', async () => {
+  const output = '==============================================================\nqname all.q\nhostname node1\nowner alice\njobname train\njobnumber 42\ntaskid 2\nqsub_time Thu Jan 02 03:04:05 2025\nstart_time Thu Jan 02 03:05:05 2025\nend_time Thu Jan 02 04:05:05 2025\nfailed 0\nexit_status 0\nslots 4\nru_wallclock 3600\n==============================================================\njobnumber 43\ntaskid undefined\nfailed 0\nexit_status 1\n'
+  const adapter = createLiveAdapter({}, async (command, args) => {
+    assert.equal(command, 'qacct')
+    assert.deepEqual(args, ['-j'])
+    return { stdout: output }
+  })
+  const jobs = await adapter.getJobHistory()
+  assert.deepEqual(jobs, parseAccounting(output, 'sge'))
+  assert.equal(jobs[0].id, '42.2')
+  assert.equal(jobs[0].status, 'completed')
+  assert.ok(jobs[0].ended)
+  assert.equal(jobs[0].duration, '1h 0m')
+  assert.equal(jobs[1].id, '43')
+  assert.equal(jobs[1].status, 'failed')
+  const [unknown] = parseAccounting('jobnumber 44\nend_time 0\n', 'sge')
+  assert.equal(unknown.status, 'unknown')
+  assert.equal(unknown.ended, null)
+})
 test('parse SGE XML, array tasks, held jobs and missing metrics without invented CPU data', () => {
   const jobs = parseJobs(jobsXml, 'sge')
   assert.equal(jobs[0].id, '42.1')
@@ -159,7 +179,7 @@ test('HTTP live queries execute binaries, reject all writes and never create loc
     await mkdir(binaries)
     const log = path.join(directory, 'commands.jsonl')
     const script = `#!${process.execPath}\nconst { appendFileSync } = require('node:fs'); const path = require('node:path'); const key = path.basename(process.argv[1]) + ' ' + process.argv.slice(2).join(' '); appendFileSync(${JSON.stringify(log)}, JSON.stringify(key) + '\\n'); const outputs = new Map(${JSON.stringify([...outputs])}); if (!outputs.has(key)) process.exit(1); process.stdout.write(outputs.get(key));\n`
-    for (const command of ['qstat', 'qhost', 'qconf']) await writeFile(path.join(binaries, command), script, { mode: 0o755 })
+    for (const command of ['qstat', 'qacct', 'qhost', 'qconf']) await writeFile(path.join(binaries, command), script, { mode: 0o755 })
     const storage = path.join(directory, 'unused', 'data.json')
     server = await startServer({ GRIDENGINE_MODE: 'live', SGE_BIN_DIR: binaries, DATA_FILE: storage })
     assert.equal((await fetch(`${server.url}/api/state`)).status, 401)
@@ -169,6 +189,9 @@ test('HTTP live queries execute binaries, reject all writes and never create loc
     assert.equal(state.mode, 'live')
     assert.equal(state.jobs[0].name, 'train')
     assert.equal(state.hostGroups.length, 2)
+    const historyResponse = await fetch(`${server.url}/api/jobs/history`, { headers: server.headers })
+    assert.equal(historyResponse.status, 200)
+    assert.equal((await historyResponse.json()).jobs[0].name, 'finished')
     const detailResponse = await fetch(`${server.url}/api/jobs/42/detail`, { headers: server.headers })
     assert.equal(detailResponse.status, 200)
     assert.match((await detailResponse.json()).output, /script_file: \/home\/alice\/train.sh/)
@@ -182,7 +205,7 @@ test('HTTP live queries execute binaries, reject all writes and never create loc
     }
     const cachedResponse = await fetch(`${server.url}/api/state`, { headers: server.headers })
     assert.equal(cachedResponse.status, 200)
-    assert.equal((await readFile(log, 'utf8')).trim().split('\n').length, 12)
+    assert.equal((await readFile(log, 'utf8')).trim().split('\n').length, 13)
     await assert.rejects(stat(storage), { code: 'ENOENT' })
   } finally { await server?.close(); await rm(directory, { recursive: true, force: true }) }
 })
@@ -200,6 +223,9 @@ test('HTTP missing SGE binaries returns 502 with live metadata instead of demo f
     assert.equal(result.readOnly, true)
     assert.match(result.error, /ENOENT/)
     assert.equal(result.jobs, undefined)
+    const historyResponse = await fetch(`${server.url}/api/jobs/history`, { headers: server.headers })
+    assert.equal(historyResponse.status, 502)
+    assert.match((await historyResponse.json()).error, /qacct 查询失败/)
     assert.equal(await readFile(storage, 'utf8'), 'not valid JSON')
   } finally { await server?.close(); await rm(directory, { recursive: true, force: true }) }
 })
@@ -213,6 +239,7 @@ test('demo mode remains writable and persists its state', async () => {
     assert.equal(state.mode, 'demo')
     assert.equal(state.readOnly, false)
     assert.equal(state.jobs.length, 156)
+    assert.deepEqual((await (await fetch(`${server.url}/api/jobs/history`, { headers: server.headers })).json()).jobs, [])
     const response = await fetch(`${server.url}/api/queues`, { method: 'POST', headers: server.headers, body: JSON.stringify({ name: 'live-regression.q', cluster: 'production', slots: 8, type: 'test', priority: 0 }) })
     assert.equal(response.status, 201)
     assert.ok(JSON.parse(await readFile(storage, 'utf8')).queues.some(item => item.name === 'live-regression.q'))

@@ -61,6 +61,9 @@ const record = (title) => data.events.unshift({ id: Date.now(), type: 'info', ti
 app.get('/api/state', async (_request, response) => {
   response.set('Cache-Control', 'no-store').json(live ? await live.getState() : { ...data, mode, readOnly: false })
 })
+app.get('/api/jobs/history', async (_request, response) => {
+  response.set('Cache-Control', 'no-store').json({ jobs: live ? await live.getJobHistory() : data.jobs.filter(job => ['completed', 'failed'].includes(job.status)) })
+})
 app.get('/api/jobs/:id/detail', async (request, response) => {
   response.set('Cache-Control', 'no-store')
   if (!live) {

@@ -152,6 +152,36 @@ try {
   await page.getByText('最近作业', { exact: true }).waitFor()
   console.log('PASS live job columns, full details, errors and mobile layout')
 
+  const historyJobs = [
+    { id: '1', name: 'old_job', user: 'alice', cluster: 'production', status: 'completed', ended: '2025-01-01T12:00:00', queue: 'all.q' },
+    { id: '2', name: 'new_job', user: 'bob', cluster: 'production', status: 'failed', ended: '2025-01-03T12:00:00', queue: 'all.q' },
+    { id: '3', name: 'other_cluster_job', user: 'alice', cluster: 'research', status: 'completed', ended: '2025-01-02T12:00:00', queue: 'short.q' },
+  ]
+  let historyFails = false
+  const historyRoute = route => route.fulfill(historyFails ? { status: 502, json: { error: 'qacct 查询失败' } } : { json: { jobs: historyJobs } })
+  await page.route('**/api/jobs/history', historyRoute)
+  await page.locator('nav').getByRole('button', { name: '作业管理', exact: true }).click()
+  await page.getByRole('tab', { name: '历史作业' }).click()
+  await page.getByText('new_job', { exact: true }).waitFor()
+  assert.deepEqual(await page.locator('tbody tr').allTextContents().then(rows => rows.map(row => row.match(/(?:new|old|other_cluster)_job/)[0])), ['new_job', 'other_cluster_job', 'old_job'])
+  await page.getByLabel('开始日期').fill('2025-01-02')
+  await page.getByLabel('结束日期').fill('2025-01-02')
+  assert.equal(await page.locator('tbody tr').count(), 1)
+  await page.getByText('other_cluster_job', { exact: true }).waitFor()
+  await page.getByLabel('选择集群').selectOption('production')
+  await page.getByText('暂无匹配的历史作业').waitFor()
+  await page.setViewportSize({ width: 360, height: 844 })
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth), false)
+  historyFails = true
+  await page.getByRole('button', { name: '刷新历史作业' }).click()
+  await page.getByRole('alert').getByText('qacct 查询失败').waitFor()
+  await page.getByRole('tab', { name: '当前作业' }).click()
+  await page.getByText('全部作业', { exact: true }).waitFor()
+  await page.unroute('**/api/jobs/history', historyRoute)
+  await page.getByLabel('选择集群').selectOption('all')
+  await page.setViewportSize({ width: 1440, height: 1100 })
+  console.log('PASS historical jobs ordering, dates, cluster, errors and mobile layout')
+
   await page.locator('nav').getByRole('button', { name: '用户管理', exact: true }).click()
   await page.getByRole('button', { name: '添加用户', exact: true }).click()
   await page.getByLabel('用户名', { exact: true }).fill('browseruser')

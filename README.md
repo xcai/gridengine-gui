@@ -120,7 +120,7 @@ pnpm dev:live
 
 | 可选环境变量 | 默认值 | 用途 |
 | --- | --- | --- |
-| `SGE_BIN_DIR` | 从 `PATH` 查找 | `qstat`、`qhost`、`qconf` 所在目录，例如 `/opt/sge/bin/lx-amd64` |
+| `SGE_BIN_DIR` | 从 `PATH` 查找 | `qstat`、`qacct`、`qhost`、`qconf` 所在目录，例如 `/opt/sge/bin/lx-amd64` |
 | `SGE_CLUSTER_ID` | `sge` | 前端集群 ID |
 | `SGE_CLUSTER_NAME` | `SGE_CELL` 或 `Grid Engine` | 前端集群名称 |
 | `SGE_QMASTER_HOST` | `-` | 主控节点的展示名称，不改变命令连接目标 |
@@ -134,6 +134,7 @@ pnpm dev:live
 | 数据 | 查询命令 |
 | --- | --- |
 | 所有用户的当前作业 | `qstat -xml -u '*'` |
+| 历史作业 | `qacct -j`（打开历史作业时查询） |
 | 作业完整详情 | `qstat -j 作业ID`（打开详情时查询） |
 | 执行主机、负载、内存 | `qhost -xml` |
 | 队列实例状态与槽位 | `qstat -f -xml -u '*'` |
@@ -144,6 +145,8 @@ pnpm dev:live
 队列槽位从队列实例汇总；主机组保留原始成员（包括嵌套组引用），关联队列由队列 `hostlist` 的直接组引用反向计算，不展开嵌套关系。数组作业保留任务编号或范围。live 用户管理页分为管理者用户、执行者用户和用户组三个只读标签，分别展示对应 qconf 命令返回的名称；作业用户列表仍仅代表当前作业中观测到的用户。邮箱、部门和权限不推断。历史事件为空，不生成虚构审计记录。
 
 作业表格显示调度优先级、执行节点、提交时间、开始时间和运行时长；SGE 未返回的字段显示 `-`，不会将开始时间当作提交时间。作业详情展示列表字段及 `qstat -j` 返回的完整原始信息；数组任务使用其作业 ID 查询，命令输出及可见字段取决于集群版本和查询权限。作业结束或查询失败时会显示错误。详情可能包含作业参数和环境信息，所有已认证账号均可查看，应限制账号访问。
+
+历史作业来自 SGE accounting，按完成时间倒序显示，可按浏览器本地日期筛选；无完成时间的记录排在末尾。需要 `qacct`、accounting 文件及相应读取权限；历史数量受集群保留策略和单次命令 8 MiB 输出上限约束。查询失败会在历史页显示，不影响当前作业。demo 仅展示数据中实际存在的 completed/failed 记录，不生成模拟历史。
 
 `qhost` 的平均负载不等于 CPU 使用率，因此 CPU 使用率显示 `-`，负载可在节点详情查看；内存百分比由 `mem_used / mem_total` 计算。未提供的主机 IP、引擎版本和指标显示 `-`；live 不显示模拟历史曲线和昨日对比。实际 SGE 发行版的命令参数和输出可能有差异，上线前需与目标集群核验。当前测试使用命令样例，不代表已完成真实集群联调。
 
@@ -174,6 +177,7 @@ pnpm dev:live
 | GET | `/api/auth/me` | 当前登录账号，不含密码信息 |
 | POST | `/api/auth/logout` | 退出并撤销会话 |
 | GET | `/api/state` | 集群、节点、队列、用户、作业与事件 |
+| GET | `/api/jobs/history` | 已结束作业的 accounting 记录 |
 | GET | `/api/jobs/:id/detail` | 作业详情：live 查询数字作业 ID，demo 返回作业记录 |
 | POST | `/api/:resource` | 创建资源 |
 | PATCH | `/api/:resource/:id` | 修改状态 |

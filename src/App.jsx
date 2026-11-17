@@ -3,6 +3,7 @@ import { Activity, ArrowDownToLine, ArrowRight, ArrowUpRight, Bell, Boxes, Check
 import { Area, AreaChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import './App.css'
 import QueueGroups from './QueueGroups'
+import JobHistory from './JobHistory'
 import fetch from './api.js'
 import { LogOut } from 'lucide-react'
 import { version } from '../package.json'
@@ -48,6 +49,7 @@ export default function App({ account, onLogout }) {
   })
   const [saving, setSaving] = useState(false)
   const [queueTab, setQueueTab] = useState('queues')
+  const [jobTab, setJobTab] = useState('current')
   const [userTab, setUserTab] = useState('userManagers')
   const [mode, setMode] = useState(null)
   const readOnly = mode !== 'demo' || account.role !== 'admin'
@@ -77,7 +79,7 @@ export default function App({ account, onLogout }) {
     return () => { document.removeEventListener('keydown', handler); cancelAnimationFrame(frame); previous?.focus() }
   }, [modal])
 
-  function navigate(next) { setView(next); setQuery(''); setStatusFilter('all'); setPage(1); setSelected([]); setMobileMenu(false) }
+  function navigate(next) { setView(next); setQuery(''); setStatusFilter('all'); setPage(1); setSelected([]); setMobileMenu(false); if (next === 'jobs') setJobTab('current') }
   async function mutate(resource, id, status) {
     if (readOnly) { notify('当前模式为只读', 'error'); return false }
     try {
@@ -223,7 +225,7 @@ export default function App({ account, onLogout }) {
       {renderJobs()}
       <section className="panel activity-panel"><PanelHeader title="近期事件" action="查看全部" onAction={() => navigate('events')} /><div className="recent-events">{data.events.slice(0, 3).map(event => <div className="recent-event" key={event.id}><span className={`event-icon ${event.type}`}>{event.type === 'success' ? <CheckCircle2 size={16} /> : event.type === 'error' ? <XCircle size={16} /> : <Activity size={16} />}</span><div><strong>{event.title}</strong><p>{event.detail}</p></div><time>{event.time}</time></div>)}</div></section>
     </>}
-    {view === 'jobs' && renderJobs()}
+    {view === 'jobs' && <><div className="queue-view-tabs" role="tablist" aria-label="作业管理视图"><button role="tab" aria-selected={jobTab === 'current'} onClick={() => { setJobTab('current'); setPage(1); setSelected([]) }}><Workflow size={16} />当前作业</button><button role="tab" aria-selected={jobTab === 'history'} onClick={() => { setJobTab('history'); setPage(1); setSelected([]) }}><Clock3 size={16} />历史作业</button></div>{jobTab === 'current' ? renderJobs() : <JobHistory cluster={cluster} />}</>}
     {view === 'queues' && <div className="queue-view-tabs" role="tablist" aria-label="队列管理视图"><button role="tab" aria-selected={queueTab === 'queues'} onClick={() => setQueueTab('queues')}><Layers3 size={16} />队列</button><button role="tab" aria-selected={queueTab === 'groups'} onClick={() => setQueueTab('groups')}><Network size={16} />队列组</button></div>}
     {['nodes', 'queues', 'clusters', 'users'].includes(view) && (view === 'queues' && queueTab === 'groups' ? <QueueGroups data={data} cluster={cluster} onSaved={load} notify={notify} /> : renderManagement())}
     {view === 'events' && <section className="panel"><PanelHeader title="系统事件" note={<span className="count-pill">{data.events.length}</span>} /><div className="event-list">{data.events.map(event => <div className="recent-event" key={event.id}><span className={`event-icon ${event.type}`}><Activity size={18} /></span><div><strong>{event.title}</strong><p>{event.detail}</p></div><time>{event.time}</time></div>)}</div></section>}

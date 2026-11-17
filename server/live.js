@@ -56,6 +56,26 @@ export function parseJobs(output, cluster) {
     }
   })
 }
+export function parseAccounting(output, cluster) {
+  return output.split(/^={3,}\s*$/m).map(block => {
+    const values = parseConfig(block)
+    if (!/^\d+$/.test(values.jobnumber || '')) return null
+    const jobId = values.jobnumber
+    const tasks = values.taskid && values.taskid !== 'undefined' && values.taskid !== '0' ? values.taskid : ''
+    const seconds = number(values.ru_wallclock)
+    const failed = number(values.failed), exitStatus = number(values.exit_status)
+    const accountingTime = value => value === '0' || value === 'undefined' ? null : timestamp(value)
+    return {
+      id: tasks ? `${jobId}.${tasks}` : jobId, jobId, tasks,
+      name: values.jobname || jobId, user: values.owner || '-', cluster,
+      status: failed == null || exitStatus == null ? 'unknown' : failed === 0 && exitStatus === 0 ? 'completed' : 'failed',
+      queue: values.qname || '-', node: values.hostname || '-', slots: number(values.slots),
+      submitted: accountingTime(values.qsub_time), started: accountingTime(values.start_time), ended: accountingTime(values.end_time),
+      duration: seconds == null ? '-' : `${Math.floor(seconds / 3600)}h ${Math.floor(seconds % 3600 / 60)}m`,
+      exitStatus,
+    }
+  }).filter(Boolean)
+}
 export function parseNodes(output, cluster) {
   return list(xml(output, 'qhost', 'qhost').host).map(item => {
     const values = Object.fromEntries(list(item.hostvalue).map(value => [value['@_name'], value['#text']]))
@@ -139,6 +159,9 @@ export function createLiveAdapter(env = process.env, runCommand) {
     }
   }
   return {
+    async getJobHistory() {
+      return parseAccounting(await run('qacct', ['-j']), cluster)
+    },
     async getJobDetail(jobId) {
       if (!/^[0-9]+$/.test(jobId)) throw Object.assign(new Error('无效作业 ID'), { status: 400 })
       return run('qstat', ['-j', jobId])
