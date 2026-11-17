@@ -61,6 +61,15 @@ const record = (title) => data.events.unshift({ id: Date.now(), type: 'info', ti
 app.get('/api/state', async (_request, response) => {
   response.set('Cache-Control', 'no-store').json(live ? await live.getState() : { ...data, mode, readOnly: false })
 })
+app.get('/api/jobs/:id/detail', async (request, response) => {
+  response.set('Cache-Control', 'no-store')
+  if (!live) {
+    const item = data.jobs.find(job => job.id === request.params.id)
+    return item ? response.json({ item }) : response.status(404).json({ error: '作业不存在' })
+  }
+  if (!/^[0-9]+$/.test(request.params.id)) return response.status(400).json({ error: '无效作业 ID' })
+  response.json({ output: await live.getJobDetail(request.params.id) })
+})
 
 const hostGroupSchema = z.object({
   name: z.string().regex(/^@[a-zA-Z][a-zA-Z0-9_.-]{0,62}$/, '组名须以 @ 和英文字母开头'),

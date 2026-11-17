@@ -1,5 +1,6 @@
 .queue-view-tabs{display:flex;gap:24px;border-bottom:1px solid var(--border);margin-bottom:18px}
 .queue-view-tabs button{display:flex;align-items:center;gap:7px;padding:12px 2px;border-bottom:2px solid transparent;color:#717a76}
+.user-category-tabs button{font-size:12px}
 .queue-view-tabs button[aria-selected="true"]{border-bottom-color:#228261;color:#228261;font-weight:600}
 .queue-groups .panel-heading{gap:12px;flex-wrap:wrap}
 .queue-groups .panel-heading>div{display:flex;align-items:center;gap:8px}

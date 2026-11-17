@@ -51,7 +51,7 @@ export function parseJobs(output, cluster) {
       id: tasks ? `${jobId}.${tasks}` : jobId, jobId, tasks,
       name: item.JB_name || jobId, user: item.JB_owner || '-', cluster, status,
       queue: queueInstance.split('@')[0] || '-', node: queueInstance.split('@')[1] || '-',
-      slots: number(item.slots), submitted: timestamp(item.JB_submission_time) || started,
+      slots: number(item.slots), priority: number(item.JAT_prio ?? item.JB_priority), submitted: timestamp(item.JB_submission_time), started,
       duration: elapsed == null ? '-' : `${Math.floor(elapsed / 60)}h ${elapsed % 60}m`, sgeState: rawState,
     }
   })
@@ -139,6 +139,10 @@ export function createLiveAdapter(env = process.env, runCommand) {
     }
   }
   return {
+    async getJobDetail(jobId) {
+      if (!/^[0-9]+$/.test(jobId)) throw Object.assign(new Error('无效作业 ID'), { status: 400 })
+      return run('qstat', ['-j', jobId])
+    },
     async getState() {
       if (cached && Date.now() < expires) return cached
       if (!inFlight) inFlight = collect().then(state => { cached = state; expires = Date.now() + cacheMs; return state }).finally(() => { inFlight = null })

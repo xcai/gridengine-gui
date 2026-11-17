@@ -1,4 +1,5 @@
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;450;500;550;600;650;700&family=Noto+Sans+SC:wght@400;450;500;550;600;650;700&display=swap');
+.setting-select{border:1px solid #e6eae7;border-radius:5px;background:#fff;color:#5d6e63;padding:7px 10px;font:inherit;font-size:11px}
 html th{font-size:12px}
 
 :root{font-family:'DM Sans','Noto Sans SC',sans-serif;color:#28352f;background:#f6f8fa;font-synthesis:none;text-rendering:optimizeLegibility;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;font-size:13px;font-weight:400;line-height:1.5;letter-spacing:0;--green:#218567;--green-dark:#176b53;--muted:#8a929b;--border:#e9edf0;--text:#2c3633}

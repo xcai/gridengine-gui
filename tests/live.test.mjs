@@ -14,6 +14,7 @@ const hostsXml = '<qhost><host name="global"><hostvalue name="arch_string">-</ho
 const queuesXml = '<job_info><queue_info><QueueList><name>all.q@node1</name><slots_total>8</slots_total><slots_used>4</slots_used></QueueList><QueueList><name>all.q@node2</name><slots_total>8</slots_total><slots_used>0</slots_used><state>d</state></QueueList></queue_info></job_info>'
 const outputs = new Map([
   ['qstat -xml -u *', jobsXml], ['qhost -xml', hostsXml], ['qstat -f -xml -u *', queuesXml],
+  ['qstat -j 42', 'job_number: 42\nscript_file: /home/alice/train.sh\n'],
   ['qconf -sql', 'all.q\n'], ['qconf -shgrpl', '@compute\n@empty\n'],
   ['qconf -sm', 'manager1\nmanager2\n'], ['qconf -so', 'operator1\n'], ['qconf -sul', 'researchers\nvisitors\n'],
   ['qconf -sq all.q', 'qname all.q\nhostlist @compute\npriority 0\nqtype BATCH INTERACTIVE\n'],
@@ -25,6 +26,11 @@ test('parse SGE XML, array tasks, held jobs and missing metrics without invented
   assert.equal(jobs[0].id, '42.1')
   assert.equal(jobs[1].status, 'held')
   assert.equal(jobs[0].node, 'node1')
+  assert.equal(jobs[0].priority, null)
+  const [timedJob] = parseJobs('<job_info><queue_info><job_list><JB_job_number>44</JB_job_number><JAT_prio>0.55500</JAT_prio><JAT_start_time>2025-01-02T03:04:05Z</JAT_start_time></job_list></queue_info></job_info>', 'sge')
+  assert.equal(timedJob.priority, 0.555)
+  assert.equal(timedJob.started, '2025-01-02T03:04:05.000Z')
+  assert.equal(timedJob.submitted, null)
   const nodes = parseNodes(hostsXml, 'sge')
   assert.equal(nodes.length, 3)
   const globalNode = nodes.find(item => item.id === 'global')
@@ -80,6 +86,8 @@ test('collect real command output, aggregate queue slots, share in-flight work a
   assert.deepEqual(state.userLists.map(item => item.name), ['researchers', 'visitors'])
   for (const command of ['qconf -sm', 'qconf -so', 'qconf -sul']) assert.ok(calls.some(([, args]) => `qconf ${args.join(' ')}` === command))
   assert.deepEqual(state.events, [])
+  assert.match(await adapter.getJobDetail('42'), /script_file: \/home\/alice\/train.sh/)
+  await assert.rejects(adapter.getJobDetail('-help'), /无效作业 ID/)
 })
 test('command failures are explicit, not cached or replaced by demo data', async () => {
   let count = 0
@@ -161,6 +169,10 @@ test('HTTP live queries execute binaries, reject all writes and never create loc
     assert.equal(state.mode, 'live')
     assert.equal(state.jobs[0].name, 'train')
     assert.equal(state.hostGroups.length, 2)
+    const detailResponse = await fetch(`${server.url}/api/jobs/42/detail`, { headers: server.headers })
+    assert.equal(detailResponse.status, 200)
+    assert.match((await detailResponse.json()).output, /script_file: \/home\/alice\/train.sh/)
+    assert.equal((await fetch(`${server.url}/api/jobs/-help/detail`, { headers: server.headers })).status, 400)
     for (const endpoint of ['jobs', 'nodes', 'queues', 'clusters', 'users', 'hostGroups', 'userManagers', 'userOperators', 'userLists', 'unknown']) {
       for (const method of ['POST', 'PATCH', 'PUT', 'DELETE']) {
         const response = await fetch(`${server.url}/api/${endpoint}${method === 'POST' ? '' : '/test'}`, { method, headers: server.headers })
@@ -170,7 +182,7 @@ test('HTTP live queries execute binaries, reject all writes and never create loc
     }
     const cachedResponse = await fetch(`${server.url}/api/state`, { headers: server.headers })
     assert.equal(cachedResponse.status, 200)
-    assert.equal((await readFile(log, 'utf8')).trim().split('\n').length, 11)
+    assert.equal((await readFile(log, 'utf8')).trim().split('\n').length, 12)
     await assert.rejects(stat(storage), { code: 'ENOENT' })
   } finally { await server?.close(); await rm(directory, { recursive: true, force: true }) }
 })
