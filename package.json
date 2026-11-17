@@ -1,7 +1,7 @@
 {
   "name": "gridengine-gui",
   "private": true,
-  "version": "0.2.0",
+  "version": "0.2.1",
   "type": "module",
   "scripts": {
     "admin:users": "node server/users.js",
@@ -35,6 +35,7 @@
     "@vitejs/plugin-react": "^6.1.2",
     "concurrently": "^10.0.7",
     "oxlint": "^1.90.0",
-    "vite": "^8.3.6"
+    "vite": "^8.3.6",
+    "@rolldown/binding-linux-x64-gnu": "^1.3.2"
   }
 }

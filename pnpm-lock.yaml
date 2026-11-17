@@ -33,6 +33,9 @@ importers:
       '@playwright/test':
         specifier: ^1.65.0
         version: 1.65.0
+      '@rolldown/binding-linux-x64-gnu':
+        specifier: ^1.3.2
+        version: 1.3.2
       '@types/react':
         specifier: ^19.3.0
         version: 19.3.0
@@ -283,6 +286,13 @@ packages:
 
   '@rolldown/binding-linux-x64-gnu@1.2.19':
     resolution: {integrity: sha512-rm75/9DkHKeU2WnA8w4X94WGYgLlDCFCfkQC+4bguVJmC/jvDRv2B+2wLOYhyE0fVuv7//Ckk39OoOufyCu76Q==}
+    engines: {node: ^20.19.0 || >=22.12.0}
+    cpu: [x64]
+    os: [linux]
+    libc: [glibc]
+
+  '@rolldown/binding-linux-x64-gnu@1.3.2':
+    resolution: {integrity: sha512-3qssvvVvkwQookZ1/1avlKWc5orAR85vgKdzDd5noZS8nnHiI/ejOAEt0xfNYvtBBF7/DZmP8dANWkRBJVOBCA==}
     engines: {node: ^20.19.0 || >=22.12.0}
     cpu: [x64]
     os: [linux]
@@ -1198,6 +1208,8 @@ snapshots:
 
   '@rolldown/binding-linux-x64-gnu@1.2.19':
     optional: true
+
+  '@rolldown/binding-linux-x64-gnu@1.3.2': {}
 
   '@rolldown/binding-linux-x64-musl@1.2.19':
     optional: true
