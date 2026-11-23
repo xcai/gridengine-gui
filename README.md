@@ -2,6 +2,14 @@
 
 基于 Node.js、Express、React 和 Vite 的中文集群计算管理控制台，使用 pnpm 管理依赖。
 
+## 系统界面截图
+
+![集群概览](images/overview.jpg)
+
+![作业管理](images/jobs.jpg)
+
+![节点管理](images/nodes.jpg)
+
 ## 运行
 
 需要 Node.js 22.12+ 和 pnpm。
