@@ -1,5 +1,11 @@
 # GridEngine Console
 
+[![Quick Start](https://img.shields.io/badge/Quick%20Start-blue)](#运行)
+[![License](https://img.shields.io/github/license/xcai/gridengine-gui)](LICENSE)
+[![Watchers](https://img.shields.io/github/watchers/xcai/gridengine-gui?style=flat&logo=github&label=watch)](https://github.com/xcai/gridengine-gui/watchers)
+[![Forks](https://img.shields.io/github/forks/xcai/gridengine-gui?style=flat&logo=github&label=fork)](https://github.com/xcai/gridengine-gui/forks)
+[![Stars](https://img.shields.io/github/stars/xcai/gridengine-gui?style=flat&logo=github&label=star)](https://github.com/xcai/gridengine-gui/stargazers)
+
 基于 Node.js、Express、React 和 Vite 的中文集群计算管理控制台，使用 pnpm 管理依赖。
 
 ## 系统界面截图
