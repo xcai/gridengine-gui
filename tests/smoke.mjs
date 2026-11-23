@@ -161,7 +161,7 @@ try {
   ]
   let historyFails = false
   const historyRoute = route => route.fulfill(historyFails ? { status: 502, json: { error: 'qacct 查询失败' } } : { json: { jobs: historyJobs } })
-  await page.route('**/api/jobs/history', historyRoute)
+  await page.route('**/api/jobs/history*', historyRoute)
   await page.clock.setFixedTime(new Date('2025-03-31T12:00:00'))
   await page.locator('nav').getByRole('button', { name: '作业管理', exact: true }).click()
   await page.getByRole('tab', { name: '历史作业' }).click()
@@ -184,7 +184,7 @@ try {
   await page.getByRole('alert').getByText('qacct 查询失败').waitFor()
   await page.getByRole('tab', { name: '当前作业' }).click()
   await page.getByText('全部作业', { exact: true }).waitFor()
-  await page.unroute('**/api/jobs/history', historyRoute)
+  await page.unroute('**/api/jobs/history*', historyRoute)
   await page.getByLabel('选择集群').selectOption('all')
   await page.clock.setFixedTime(new Date())
   await page.setViewportSize({ width: 1440, height: 1100 })

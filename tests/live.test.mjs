@@ -41,6 +41,17 @@ test('parse accounting records including array tasks and failed jobs', async () 
   assert.equal(unknown.status, 'unknown')
   assert.equal(unknown.ended, null)
 })
+test('history passes completion time bounds and a separate timeout to qacct', async () => {
+  const adapter = createLiveAdapter({ SGE_HISTORY_TIMEOUT_MS: '180000' }, async (command, args, options) => {
+    assert.equal(command, 'qacct')
+    const format = date => `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}.${String(date.getSeconds()).padStart(2, '0')}`
+    assert.deepEqual(args, ['-j', '-E', '-b', format(new Date('2025-01-01T00:00:00.000Z')), '-e', format(new Date('2025-02-02T23:59:59.000Z'))])
+    assert.equal(options.timeout, 180000)
+    return { stdout: '' }
+  })
+  assert.deepEqual(await adapter.getJobHistory({ start: '2025-01-02T00:00:00.000Z', end: '2025-02-01T23:59:59.000Z' }), [])
+  assert.throws(() => createLiveAdapter({ SGE_HISTORY_TIMEOUT_MS: 'invalid' }))
+})
 test('stream accounting output larger than the command buffer without truncation', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'sge-accounting-test-'))
   try {
@@ -61,7 +72,7 @@ test('streamed accounting failures do not return partial results', async () => {
     await writeFile(executable, `#!${process.execPath}\nprocess.stdout.write('extra ' + 'x'.repeat(1024 * 1024) + '\\n');\n`, { mode: 0o755 })
     await assert.rejects(createLiveAdapter({ SGE_BIN_DIR: directory }).getJobHistory(), /单条 accounting 记录超过 1 MiB/)
     await writeFile(executable, `#!${process.execPath}\nsetInterval(() => {}, 1000);\n`, { mode: 0o755 })
-    await assert.rejects(createLiveAdapter({ SGE_BIN_DIR: directory, SGE_COMMAND_TIMEOUT_MS: '100' }).getJobHistory(), /超时/)
+    await assert.rejects(createLiveAdapter({ SGE_BIN_DIR: directory, SGE_HISTORY_TIMEOUT_MS: '100' }).getJobHistory(), /超时/)
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 test('parse SGE XML, array tasks, held jobs and missing metrics without invented CPU data', () => {

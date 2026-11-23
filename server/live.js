@@ -115,6 +115,7 @@ async function mapLimited(values, action) {
 }
 export function createLiveAdapter(env = process.env, runCommand) {
   const timeout = positiveInteger(env.SGE_COMMAND_TIMEOUT_MS, 10000, 120000)
+  const historyTimeout = positiveInteger(env.SGE_HISTORY_TIMEOUT_MS, 120000, 900000)
   const cacheMs = positiveInteger(env.SGE_CACHE_MS, 10000, 300000)
   const cluster = env.SGE_CLUSTER_ID || 'sge'
   let cached, expires = 0, inFlight
@@ -127,11 +128,24 @@ export function createLiveAdapter(env = process.env, runCommand) {
       throw failure(`${command} 查询失败（${error.killed ? '超时' : error.code || '执行错误'}），请检查 SGE 环境与查询权限`)
     }
   }
-  async function readJobHistory() {
-    if (runCommand) return parseAccounting(await run('qacct', ['-j']), cluster)
+  async function readJobHistory({ start, end } = {}, { signal } = {}) {
+    const formatDate = date => `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}.${String(date.getSeconds()).padStart(2, '0')}`
+    const args = ['-j']
+    if (start || end) args.push('-E')
+    if (start) args.push('-b', formatDate(new Date(new Date(start).getTime() - 86400000)))
+    if (end) args.push('-e', formatDate(new Date(new Date(end).getTime() + 86400000)))
+    if (runCommand) {
+      try {
+        const executable = env.SGE_BIN_DIR ? path.join(env.SGE_BIN_DIR, 'qacct') : 'qacct'
+        const result = await runCommand(executable, args, { timeout: historyTimeout, maxBuffer: 8 * 1024 * 1024, shell: false, env: { ...env, LC_ALL: 'C', LANG: 'C' } })
+        return parseAccounting(result.stdout, cluster)
+      } catch (error) {
+        throw failure(`qacct 查询失败（${error.killed ? '超时' : error.code || '执行错误'}），请检查 SGE 环境与查询权限`)
+      }
+    }
     return new Promise((resolve, reject) => {
       const executable = env.SGE_BIN_DIR ? path.join(env.SGE_BIN_DIR, 'qacct') : 'qacct'
-      const child = spawn(executable, ['-j'], { timeout, shell: false, env: { ...env, LC_ALL: 'C', LANG: 'C' }, stdio: ['ignore', 'pipe', 'ignore'] })
+      const child = spawn(executable, args, { timeout: historyTimeout, signal, shell: false, env: { ...env, LC_ALL: 'C', LANG: 'C' }, stdio: ['ignore', 'pipe', 'ignore'] })
       const lines = createInterface({ input: child.stdout, crlfDelay: Infinity })
       const jobs = []
       let block = '', blockBytes = 0, errorMessage = ''
@@ -184,8 +198,8 @@ export function createLiveAdapter(env = process.env, runCommand) {
     }
   }
   return {
-    async getJobHistory() {
-      return readJobHistory()
+    async getJobHistory(range, options) {
+      return readJobHistory(range, options)
     },
     async getJobDetail(jobId) {
       if (!/^[0-9]+$/.test(jobId)) throw Object.assign(new Error('无效作业 ID'), { status: 400 })

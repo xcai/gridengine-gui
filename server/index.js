@@ -61,8 +61,18 @@ const record = (title) => data.events.unshift({ id: Date.now(), type: 'info', ti
 app.get('/api/state', async (_request, response) => {
   response.set('Cache-Control', 'no-store').json(live ? await live.getState() : { ...data, mode, readOnly: false })
 })
-app.get('/api/jobs/history', async (_request, response) => {
-  response.set('Cache-Control', 'no-store').json({ jobs: live ? await live.getJobHistory() : data.jobs.filter(job => ['completed', 'failed'].includes(job.status)) })
+app.get('/api/jobs/history', async (request, response) => {
+  const parsed = z.object({ start: z.iso.datetime().optional(), end: z.iso.datetime().optional() }).safeParse(request.query)
+  if (!parsed.success || (parsed.data.start && parsed.data.end && new Date(parsed.data.start) > new Date(parsed.data.end))) return response.status(400).json({ error: '无效日期范围' })
+  const controller = new AbortController()
+  const cancel = () => { if (!response.writableEnded) controller.abort() }
+  response.on('close', cancel)
+  try {
+    const jobs = live ? await live.getJobHistory(parsed.data, { signal: controller.signal }) : data.jobs.filter(job => ['completed', 'failed'].includes(job.status))
+    if (!controller.signal.aborted) response.set('Cache-Control', 'no-store').json({ jobs })
+  } catch (error) {
+    if (!controller.signal.aborted) throw error
+  } finally { response.off('close', cancel) }
 })
 app.get('/api/jobs/:id/detail', async (request, response) => {
   response.set('Cache-Control', 'no-store')

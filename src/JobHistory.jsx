@@ -21,13 +21,18 @@ export default function JobHistory({ cluster }) {
 
   useEffect(() => {
     const controller = new AbortController()
-    fetch('/api/jobs/history', { signal: controller.signal }).then(async response => {
-      const result = await response.json()
-      if (!response.ok) throw new Error(result.error || '历史作业查询失败')
-      setJobs(result.jobs); setError('')
-    }).catch(failure => { if (failure.name !== 'AbortError') setError(failure.message) }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
-    return () => controller.abort()
-  }, [revision])
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams()
+      if (start) params.set('start', new Date(`${start}T00:00:00`).toISOString())
+      if (end) params.set('end', new Date(`${end}T23:59:59`).toISOString())
+      fetch(`/api/jobs/history?${params}`, { signal: controller.signal }).then(async response => {
+        const result = await response.json()
+        if (!response.ok) throw new Error(result.error || '历史作业查询失败')
+        setJobs(result.jobs); setError('')
+      }).catch(failure => { if (failure.name !== 'AbortError') setError(failure.message) }).finally(() => { if (!controller.signal.aborted) setLoading(false) })
+    }, 300)
+    return () => { clearTimeout(timer); controller.abort() }
+  }, [revision, start, end])
 
   const rows = jobs.filter(item => {
     const day = localDate(item.ended)
@@ -38,8 +43,8 @@ export default function JobHistory({ cluster }) {
   return <section className="panel job-panel">
     <div className="panel-heading"><div><h2>历史作业</h2><span className="panel-note"><span className="count-pill">{rows.length}</span></span></div><button className="icon-button" title="刷新历史作业" aria-label="刷新历史作业" onClick={() => { setLoading(true); setRevision(value => value + 1) }}><RefreshCw size={17} /></button></div>
     <div className="history-toolbar">
-      <label>开始日期<input type="date" aria-label="开始日期" value={start} max={end || undefined} onChange={event => { setStart(event.target.value); setPage(1) }} /></label>
-      <label>结束日期<input type="date" aria-label="结束日期" value={end} min={start || undefined} onChange={event => { setEnd(event.target.value); setPage(1) }} /></label>
+      <label>开始日期<input type="date" aria-label="开始日期" value={start} max={end || undefined} onChange={event => { setStart(event.target.value); setPage(1); setLoading(true); setError('') }} /></label>
+      <label>结束日期<input type="date" aria-label="结束日期" value={end} min={start || undefined} onChange={event => { setEnd(event.target.value); setPage(1); setLoading(true); setError('') }} /></label>
       <label className="search small-search"><Search size={15} /><input aria-label="搜索历史作业" placeholder="搜索作业名称、ID、用户..." value={query} onChange={event => { setQuery(event.target.value); setPage(1) }} /></label>
     </div>
     {error ? <div className="error-banner" role="alert">{error}<button onClick={() => { setLoading(true); setRevision(value => value + 1) }}>重试</button></div> : loading ? <div className="empty-state">正在加载历史作业...</div> : <>
