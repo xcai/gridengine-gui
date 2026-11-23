@@ -166,7 +166,7 @@ try {
   await page.locator('nav').getByRole('button', { name: '作业管理', exact: true }).click()
   await page.getByRole('tab', { name: '历史作业' }).click()
   await page.getByText('new_job', { exact: true }).waitFor()
-  assert.equal(await page.getByLabel('开始日期').inputValue(), '2024-12-31')
+  assert.equal(await page.getByLabel('开始日期').inputValue(), '2025-02-28')
   assert.equal(await page.getByLabel('结束日期').inputValue(), '2025-03-31')
   assert.equal(await page.getByText('outside_job', { exact: true }).count(), 0)
   assert.equal(await page.getByText('future_job', { exact: true }).count(), 0)

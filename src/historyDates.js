@@ -5,7 +5,7 @@ export const localDate = value => {
 
 export function defaultHistoryRange(today = new Date()) {
   const year = today.getFullYear(), month = today.getMonth()
-  const lastDay = new Date(year, month - 2, 0).getDate()
-  const start = new Date(year, month - 3, Math.min(today.getDate(), lastDay))
+  const lastDay = new Date(year, month, 0).getDate()
+  const start = new Date(year, month - 1, Math.min(today.getDate(), lastDay))
   return { start: localDate(start), end: localDate(today) }
 }
