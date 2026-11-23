@@ -9,3 +9,10 @@ export function defaultHistoryRange(today = new Date()) {
   const start = new Date(year, month - 1, Math.min(today.getDate(), lastDay))
   return { start: localDate(start), end: localDate(today) }
 }
+
+export function prepareHistory(jobs) {
+  return jobs.map(item => {
+    const time = item.ended ? Date.parse(item.ended) : NaN
+    return { item, time: Number.isFinite(time) ? time : -Infinity, day: localDate(item.ended), search: `${item.id} ${item.name} ${item.user}`.toLowerCase() }
+  }).sort((first, second) => second.time - first.time)
+}

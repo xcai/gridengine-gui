@@ -153,10 +153,10 @@ try {
   console.log('PASS live job columns, full details, errors and mobile layout')
 
   const historyJobs = [
-    { id: '1', name: 'old_job', user: 'alice', cluster: 'production', status: 'completed', ended: '2025-01-01T12:00:00', queue: 'all.q' },
-    { id: '2', name: 'new_job', user: 'bob', cluster: 'production', status: 'failed', ended: '2025-01-03T12:00:00', queue: 'all.q' },
-    { id: '3', name: 'other_cluster_job', user: 'alice', cluster: 'research', status: 'completed', ended: '2025-01-02T12:00:00', queue: 'short.q' },
-    { id: '4', name: 'outside_job', user: 'alice', cluster: 'production', status: 'completed', ended: '2024-12-30T12:00:00', queue: 'all.q' },
+    { id: '1', name: 'old_job', user: 'alice', cluster: 'production', status: 'completed', ended: '2025-03-01T12:00:00', queue: 'all.q' },
+    { id: '2', name: 'new_job', user: 'bob', cluster: 'production', status: 'failed', ended: '2025-03-03T12:00:00', queue: 'all.q' },
+    { id: '3', name: 'other_cluster_job', user: 'alice', cluster: 'research', status: 'completed', ended: '2025-03-02T12:00:00', queue: 'short.q' },
+    { id: '4', name: 'outside_job', user: 'alice', cluster: 'production', status: 'completed', ended: '2025-02-27T12:00:00', queue: 'all.q' },
     { id: '5', name: 'future_job', user: 'alice', cluster: 'production', status: 'completed', ended: '2025-04-01T12:00:00', queue: 'all.q' },
   ]
   let historyFails = false
@@ -171,8 +171,8 @@ try {
   assert.equal(await page.getByText('outside_job', { exact: true }).count(), 0)
   assert.equal(await page.getByText('future_job', { exact: true }).count(), 0)
   assert.deepEqual(await page.locator('tbody tr').allTextContents().then(rows => rows.map(row => row.match(/(?:new|old|other_cluster)_job/)[0])), ['new_job', 'other_cluster_job', 'old_job'])
-  await page.getByLabel('开始日期').fill('2025-01-02')
-  await page.getByLabel('结束日期').fill('2025-01-02')
+  await page.getByLabel('开始日期').fill('2025-03-02')
+  await page.getByLabel('结束日期').fill('2025-03-02')
   assert.equal(await page.locator('tbody tr').count(), 1)
   await page.getByText('other_cluster_job', { exact: true }).waitFor()
   await page.getByLabel('选择集群').selectOption('production')

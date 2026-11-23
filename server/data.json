@@ -400,7 +400,7 @@
       "user": "zhangwei",
       "queue": "gpu.q",
       "cluster": "production",
-      "status": "running",
+      "status": "held",
       "slots": 8,
       "submitted": "2026-11-13T06:58:57.321Z",
       "command": "#!/bin/bash\n#$ -cwd\n#$ -j y\npython main.py",
@@ -2424,6 +2424,13 @@
     }
   ],
   "events": [
+    {
+      "id": 1795404320705,
+      "type": "info",
+      "title": "train_llama3_8b 状态已更新为 held",
+      "detail": "admin · 演示环境",
+      "time": "11:25:20"
+    },
     {
       "id": 1794554587075,
       "type": "info",

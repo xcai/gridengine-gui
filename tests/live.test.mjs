@@ -52,6 +52,19 @@ test('history passes completion time bounds and a separate timeout to qacct', as
   assert.deepEqual(await adapter.getJobHistory({ start: '2025-01-02T00:00:00.000Z', end: '2025-02-01T23:59:59.000Z' }), [])
   assert.throws(() => createLiveAdapter({ SGE_HISTORY_TIMEOUT_MS: 'invalid' }))
 })
+test('history cache reuses matching queries and refresh bypasses it', async () => {
+  let calls = 0
+  const adapter = createLiveAdapter({}, async () => {
+    calls++
+    return { stdout: `jobnumber ${calls}\nfailed 0\nexit_status 0\n` }
+  })
+  const range = { start: '2025-01-02T00:00:00.000Z', end: '2025-02-01T23:59:59.000Z' }
+  assert.equal((await adapter.getJobHistory(range))[0].id, '1')
+  assert.equal((await adapter.getJobHistory(range))[0].id, '1')
+  assert.equal((await adapter.getJobHistory(range, { refresh: true }))[0].id, '2')
+  assert.equal((await adapter.getJobHistory({ ...range, end: '2025-02-02T23:59:59.000Z' }))[0].id, '3')
+  assert.equal(calls, 3)
+})
 test('stream accounting output larger than the command buffer without truncation', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'sge-accounting-test-'))
   try {
@@ -66,11 +79,13 @@ test('stream accounting output larger than the command buffer without truncation
 test('GE 6.2 without -E retries without start-time filters', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'sge-accounting-legacy-'))
   try {
-    const script = `#!${process.execPath}\nif (process.argv.includes('-E')) { process.stderr.write('GE 6.2u5\\nusage: qacct [options]\\n [-b begin_time] jobs started after\\n [-e end_time] jobs started before\\n'); process.exitCode = 1 } else if (process.argv.slice(2).join(' ') !== '-j') { process.exitCode = 2 } else { process.stdout.write('==============================================================\\njobnumber 42\\njobname long_running\\nstart_time Wed Jan 01 00:00:00 2020\\nend_time Thu Jan 02 12:05:05 2025\\nfailed 0\\nexit_status 0\\n==============================================================\\njobnumber 43\\nend_time Wed Jan 01 12:00:00 2020\\nfailed 0\\nexit_status 0\\n') }\n`
+    const script = `#!${process.execPath}\nif (process.argv.includes('-E')) { process.stderr.write('GE 6.2u5\\nusage: qacct [options]\\n [-b begin_time] jobs started after\\n [-e end_time] jobs started before\\n'); process.exitCode = 1 } else if (process.argv.slice(2).join(' ') !== '-j') { process.exitCode = 2 } else { process.stdout.write('==============================================================\\njobnumber 42\\njobname long_running\\nstart_time Wed Jan 01 00:00:00 2020\\nend_time Thu Jan 02 12:05:05 2025\\nfailed 0\\nexit_status 0\\n==============================================================\\njobnumber 43\\nend_time Wed Jan 01 12:00:00 2020\\nfailed 0\\nexit_status 0\\n==============================================================\\njobnumber 44\\nend_time 0\\nfailed 0\\nexit_status 0\\n') }\n`
     await writeFile(path.join(directory, 'qacct'), script, { mode: 0o755 })
     const jobs = await createLiveAdapter({ SGE_BIN_DIR: directory }).getJobHistory({ start: '2025-01-01T00:00:00.000Z', end: '2025-01-03T23:59:59.000Z' })
     assert.equal(jobs.length, 1)
     assert.equal(jobs[0].name, 'long_running')
+    const unknownTime = await createLiveAdapter({ SGE_BIN_DIR: directory }).getJobHistory({ start: '1999-01-01T00:00:00.000Z', end: '2001-01-01T00:00:00.000Z' })
+    assert.deepEqual(unknownTime, [])
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
 test('qacct usage errors retain failure when -E is supported', async () => {
@@ -246,6 +261,9 @@ test('HTTP live queries execute binaries, reject all writes and never create loc
     const historyResponse = await fetch(`${server.url}/api/jobs/history`, { headers: server.headers })
     assert.equal(historyResponse.status, 200)
     assert.equal((await historyResponse.json()).jobs[0].name, 'finished')
+    assert.equal((await fetch(`${server.url}/api/jobs/history`, { headers: server.headers })).status, 200)
+    assert.equal((await fetch(`${server.url}/api/jobs/history?refresh=1`, { headers: server.headers })).status, 200)
+    assert.equal((await fetch(`${server.url}/api/jobs/history?refresh=invalid`, { headers: server.headers })).status, 400)
     const detailResponse = await fetch(`${server.url}/api/jobs/42/detail`, { headers: server.headers })
     assert.equal(detailResponse.status, 200)
     assert.match((await detailResponse.json()).output, /script_file: \/home\/alice\/train.sh/)
@@ -259,7 +277,7 @@ test('HTTP live queries execute binaries, reject all writes and never create loc
     }
     const cachedResponse = await fetch(`${server.url}/api/state`, { headers: server.headers })
     assert.equal(cachedResponse.status, 200)
-    assert.equal((await readFile(log, 'utf8')).trim().split('\n').length, 13)
+    assert.equal((await readFile(log, 'utf8')).trim().split('\n').length, 14)
     await assert.rejects(stat(storage), { code: 'ENOENT' })
   } finally { await server?.close(); await rm(directory, { recursive: true, force: true }) }
 })

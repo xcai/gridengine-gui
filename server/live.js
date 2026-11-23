@@ -119,6 +119,7 @@ export function createLiveAdapter(env = process.env, runCommand) {
   const cacheMs = positiveInteger(env.SGE_CACHE_MS, 10000, 300000)
   const cluster = env.SGE_CLUSTER_ID || 'sge'
   let cached, expires = 0, inFlight
+  let historyCache
   async function run(command, args) {
     try {
       const executable = env.SGE_BIN_DIR ? path.join(env.SGE_BIN_DIR, command) : command
@@ -130,6 +131,7 @@ export function createLiveAdapter(env = process.env, runCommand) {
   }
   async function readJobHistory({ start, end } = {}, { signal, unfiltered = false } = {}) {
     const formatDate = date => `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}.${String(date.getSeconds()).padStart(2, '0')}`
+    const startTime = start ? Date.parse(start) : -Infinity, endTime = end ? Date.parse(end) : Infinity
     const args = ['-j']
     if (!unfiltered && (start || end)) args.push('-E')
     if (!unfiltered && start) args.push('-b', formatDate(new Date(new Date(start).getTime() - 86400000)))
@@ -152,8 +154,9 @@ export function createLiveAdapter(env = process.env, runCommand) {
       child.stderr.setEncoding('utf8')
       child.stderr.on('data', chunk => { if (stderr.length < 2048) stderr += chunk.slice(0, 2048 - stderr.length) })
       const appendBlock = () => {
-        const records = parseAccounting(block, cluster)
-        jobs.push(...records.filter(item => !unfiltered || ((!start && !end) || (item.ended && (!start || Date.parse(item.ended) >= Date.parse(start)) && (!end || Date.parse(item.ended) <= Date.parse(end))))))
+        const endValue = unfiltered && (start || end) ? block.match(/^end_time[ \t]+([^\r\n]+)/m)?.[1]?.trim() : null
+        const ended = endValue === '0' || endValue === 'undefined' ? null : timestamp(endValue)
+        if (!unfiltered || (!start && !end) || (ended && Date.parse(ended) >= startTime && Date.parse(ended) <= endTime)) jobs.push(...parseAccounting(block, cluster))
         block = ''; blockBytes = 0
       }
       lines.on('line', line => {
@@ -212,7 +215,11 @@ export function createLiveAdapter(env = process.env, runCommand) {
   }
   return {
     async getJobHistory(range, options) {
-      return readJobHistory(range, options)
+      const key = JSON.stringify([range?.start || '', range?.end || ''])
+      if (!options?.refresh && historyCache?.key === key && Date.now() < historyCache.expires && !options?.signal?.aborted) return historyCache.jobs
+      const jobs = await readJobHistory(range, options)
+      if (!options?.signal?.aborted) historyCache = { key, jobs, expires: Date.now() + 30000 }
+      return jobs
     },
     async getJobDetail(jobId) {
       if (!/^[0-9]+$/.test(jobId)) throw Object.assign(new Error('无效作业 ID'), { status: 400 })
