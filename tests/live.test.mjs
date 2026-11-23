@@ -63,12 +63,32 @@ test('stream accounting output larger than the command buffer without truncation
     assert.equal(jobs[8999].status, 'completed')
   } finally { await rm(directory, { recursive: true, force: true }) }
 })
+test('GE 6.2 without -E retries without start-time filters', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'sge-accounting-legacy-'))
+  try {
+    const script = `#!${process.execPath}\nif (process.argv.includes('-E')) { process.stderr.write('GE 6.2u5\\nusage: qacct [options]\\n [-b begin_time] jobs started after\\n [-e end_time] jobs started before\\n'); process.exitCode = 1 } else if (process.argv.slice(2).join(' ') !== '-j') { process.exitCode = 2 } else { process.stdout.write('==============================================================\\njobnumber 42\\njobname long_running\\nstart_time Wed Jan 01 00:00:00 2020\\nend_time Thu Jan 02 12:05:05 2025\\nfailed 0\\nexit_status 0\\n==============================================================\\njobnumber 43\\nend_time Wed Jan 01 12:00:00 2020\\nfailed 0\\nexit_status 0\\n') }\n`
+    await writeFile(path.join(directory, 'qacct'), script, { mode: 0o755 })
+    const jobs = await createLiveAdapter({ SGE_BIN_DIR: directory }).getJobHistory({ start: '2025-01-01T00:00:00.000Z', end: '2025-01-03T23:59:59.000Z' })
+    assert.equal(jobs.length, 1)
+    assert.equal(jobs[0].name, 'long_running')
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
+test('qacct usage errors retain failure when -E is supported', async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), 'sge-accounting-usage-'))
+  try {
+    const script = `#!${process.execPath}\nprocess.stderr.write('usage: qacct [options]\\n [-E] select job end time\\n'); process.exitCode = 1;\n`
+    await writeFile(path.join(directory, 'qacct'), script, { mode: 0o755 })
+    await assert.rejects(createLiveAdapter({ SGE_BIN_DIR: directory }).getJobHistory({ start: '2025-01-01T00:00:00.000Z' }), /退出码 1/)
+  } finally { await rm(directory, { recursive: true, force: true }) }
+})
 test('streamed accounting failures do not return partial results', async () => {
   const directory = await mkdtemp(path.join(tmpdir(), 'sge-accounting-failure-'))
   try {
     const executable = path.join(directory, 'qacct')
     await writeFile(executable, `#!${process.execPath}\nprocess.stdout.write('jobnumber 42\\n'); process.exitCode = 3;\n`, { mode: 0o755 })
     await assert.rejects(createLiveAdapter({ SGE_BIN_DIR: directory }).getJobHistory(), /退出码 3/)
+    await writeFile(executable, `#!${process.execPath}\nprocess.stdout.write('jobnumber 42\\n'); process.stderr.write('invalid option -E\\n'); process.exitCode = 1;\n`, { mode: 0o755 })
+    await assert.rejects(createLiveAdapter({ SGE_BIN_DIR: directory }).getJobHistory(), /退出码 1.*invalid option -E/)
     await writeFile(executable, `#!${process.execPath}\nprocess.stdout.write('extra ' + 'x'.repeat(1024 * 1024) + '\\n');\n`, { mode: 0o755 })
     await assert.rejects(createLiveAdapter({ SGE_BIN_DIR: directory }).getJobHistory(), /单条 accounting 记录超过 1 MiB/)
     await writeFile(executable, `#!${process.execPath}\nsetInterval(() => {}, 1000);\n`, { mode: 0o755 })

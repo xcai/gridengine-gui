@@ -128,12 +128,12 @@ export function createLiveAdapter(env = process.env, runCommand) {
       throw failure(`${command} 查询失败（${error.killed ? '超时' : error.code || '执行错误'}），请检查 SGE 环境与查询权限`)
     }
   }
-  async function readJobHistory({ start, end } = {}, { signal } = {}) {
+  async function readJobHistory({ start, end } = {}, { signal, unfiltered = false } = {}) {
     const formatDate = date => `${date.getFullYear()}${String(date.getMonth() + 1).padStart(2, '0')}${String(date.getDate()).padStart(2, '0')}${String(date.getHours()).padStart(2, '0')}${String(date.getMinutes()).padStart(2, '0')}.${String(date.getSeconds()).padStart(2, '0')}`
     const args = ['-j']
-    if (start || end) args.push('-E')
-    if (start) args.push('-b', formatDate(new Date(new Date(start).getTime() - 86400000)))
-    if (end) args.push('-e', formatDate(new Date(new Date(end).getTime() + 86400000)))
+    if (!unfiltered && (start || end)) args.push('-E')
+    if (!unfiltered && start) args.push('-b', formatDate(new Date(new Date(start).getTime() - 86400000)))
+    if (!unfiltered && end) args.push('-e', formatDate(new Date(new Date(end).getTime() + 86400000)))
     if (runCommand) {
       try {
         const executable = env.SGE_BIN_DIR ? path.join(env.SGE_BIN_DIR, 'qacct') : 'qacct'
@@ -145,21 +145,34 @@ export function createLiveAdapter(env = process.env, runCommand) {
     }
     return new Promise((resolve, reject) => {
       const executable = env.SGE_BIN_DIR ? path.join(env.SGE_BIN_DIR, 'qacct') : 'qacct'
-      const child = spawn(executable, args, { timeout: historyTimeout, signal, shell: false, env: { ...env, LC_ALL: 'C', LANG: 'C' }, stdio: ['ignore', 'pipe', 'ignore'] })
+      const child = spawn(executable, args, { timeout: historyTimeout, signal, shell: false, env: { ...env, LC_ALL: 'C', LANG: 'C' }, stdio: ['ignore', 'pipe', 'pipe'] })
       const lines = createInterface({ input: child.stdout, crlfDelay: Infinity })
       const jobs = []
-      let block = '', blockBytes = 0, errorMessage = ''
-      const appendBlock = () => { jobs.push(...parseAccounting(block, cluster)); block = ''; blockBytes = 0 }
+      let block = '', blockBytes = 0, errorMessage = '', stderr = '', outputSample = ''
+      child.stderr.setEncoding('utf8')
+      child.stderr.on('data', chunk => { if (stderr.length < 2048) stderr += chunk.slice(0, 2048 - stderr.length) })
+      const appendBlock = () => {
+        const records = parseAccounting(block, cluster)
+        jobs.push(...records.filter(item => !unfiltered || ((!start && !end) || (item.ended && (!start || Date.parse(item.ended) >= Date.parse(start)) && (!end || Date.parse(item.ended) <= Date.parse(end))))))
+        block = ''; blockBytes = 0
+      }
       lines.on('line', line => {
         if (errorMessage) return
+        if (outputSample.length < 4096) outputSample += `${line}\n`.slice(0, 4096 - outputSample.length)
         if (/^={3,}\s*$/.test(line)) return appendBlock()
         blockBytes += Buffer.byteLength(line) + 1
         if (blockBytes > 1024 * 1024) { errorMessage = '单条 accounting 记录超过 1 MiB'; child.kill(); return }
         block += `${line}\n`
       })
       child.on('error', error => { errorMessage = error.code || '执行错误' })
-      child.on('close', (code, signal) => {
-        if (errorMessage || code !== 0) return reject(failure(`qacct 查询失败（${errorMessage || (child.killed ? '超时' : signal || `退出码 ${code}`)}），请检查 SGE 环境与查询权限`))
+      child.on('close', (code, exitSignal) => {
+        if (errorMessage || code !== 0) {
+          const output = `${stderr}\n${outputSample}`
+          if (!errorMessage && code === 1 && args.includes('-E') && /usage:\s*qacct\b/i.test(output) && !/^\s*\[-E\](?:\s|$)/m.test(output)) return resolve(readJobHistory({ start, end }, { signal, unfiltered: true }))
+          const reason = errorMessage || (child.killed ? '超时' : exitSignal || `退出码 ${code}`)
+          const detail = stderr.replace(/\p{C}+/gu, ' ').trim().slice(0, 512)
+          return reject(failure(`qacct 查询失败（${reason}）${detail ? `：${detail}` : '，请检查 SGE 环境与查询权限'}`))
+        }
         appendBlock()
         resolve(jobs)
       })
